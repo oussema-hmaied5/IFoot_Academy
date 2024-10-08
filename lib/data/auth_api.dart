@@ -35,7 +35,6 @@ class AuthApi {
       if (userDoc.exists) {
         final data = userDoc.data();
         if (data != null) {
-          print("User data fetched successfully");
           return AppUser.fromJson(data);
         } else {
           throw Exception('User document data is null');
@@ -44,7 +43,6 @@ class AuthApi {
         throw Exception('User document does not exist');
       }
     } catch (e) {
-      print('Login failed: $e');
       throw Exception('Login failed: $e');
     }
   }
@@ -80,7 +78,6 @@ class AuthApi {
 
       return 'Registration successful';
     } catch (e) {
-      print('Registration failed: $e');
       throw Exception('Registration failed: $e');
     }
   }
@@ -92,7 +89,6 @@ class AuthApi {
       });
       return 'User approved successfully';
     } catch (e) {
-      print('User approval failed: $e');
       throw Exception('User approval failed: $e');
     }
   }

@@ -1,3 +1,5 @@
+// ignore_for_file: unnecessary_type_check, library_private_types_in_public_api, unused_field, sort_child_properties_last
+
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:ifoot_academy/actions/index.dart';
@@ -17,7 +19,6 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController _password = TextEditingController();
   final TextEditingController _rePassword = TextEditingController();
   bool _isLoading = false;
-  String? _errorMessage;
 
   late OverlayEntry _overlayEntry;
 
@@ -30,12 +31,9 @@ void _onResult(AppAction action) {
       _phoneNumber.clear();
       _password.clear();
       _rePassword.clear();
-      _errorMessage = null;
       _showSuccessDialog();
     } else if (action is RegisterError) {
       // Modify the error message to remove the word "Exception"
-      _errorMessage = action.error.toString().replaceFirst('Exception: ', '');
-      print('Registration failed: $_errorMessage');
     }
   });
 }
@@ -61,56 +59,19 @@ void _onResult(AppAction action) {
     );
   }
 
-  void _showErrorOverlay(String errorMessage) {
-    _overlayEntry = OverlayEntry(
-      builder: (context) => Positioned(
-        top: 100.0,
-        left: MediaQuery.of(context).size.width * 0.1,
-        width: MediaQuery.of(context).size.width * 0.8,
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.all(10.0),
-            decoration: BoxDecoration(
-              color: Colors.redAccent,
-              borderRadius: BorderRadius.circular(10.0),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    errorMessage,
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () {
-                    _overlayEntry.remove();
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    Overlay.of(context)?.insert(_overlayEntry);
-  }
 
   @override
   Widget build(BuildContext context) {
-    final double _height = MediaQuery.of(context).size.height;
-    final double _width = MediaQuery.of(context).size.width;
+    final double height = MediaQuery.of(context).size.height;
+    final double width = MediaQuery.of(context).size.width;
     return Scaffold(
       body: Stack(
         alignment: Alignment.topCenter,
         children: <Widget>[
           Container(
             color: const Color.fromARGB(255, 101, 200, 240),
-            height: _height,
-            width: _width,
+            height: height,
+            width: width,
             child: const Padding(
               padding: EdgeInsets.only(top: 100, left: 30),
               child: Text(
@@ -121,14 +82,14 @@ void _onResult(AppAction action) {
           ),
           SingleChildScrollView(
             child: Padding(
-              padding: EdgeInsets.only(top: _height * 0.2),
+              padding: EdgeInsets.only(top: height * 0.2),
               child: Container(
                 decoration: const BoxDecoration(
                   color: Color(0xffffffff),
                   borderRadius: BorderRadius.only(topLeft: Radius.circular(50), topRight: Radius.circular(50)),
                 ),
-                height: _height * 0.8,
-                width: _width,
+                height: height * 0.8,
+                width: width,
                 child: Form(
                   child: Column(
                     children: <Widget>[
@@ -286,11 +247,10 @@ void _onResult(AppAction action) {
                           }
                           return GestureDetector(
                             onTap: () async {
-                              if (!Form.of(context)!.validate()) {
+                              if (!Form.of(context).validate()) {
                                 return;
                               }
                               setState(() => _isLoading = true);
-                              print('Dispatching RegisterStart action');
                               StoreProvider.of<AppState>(context).dispatch(
                                 RegisterStart(
                                   mobile: _phoneNumber.text,

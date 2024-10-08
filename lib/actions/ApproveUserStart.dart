@@ -1,3 +1,5 @@
+// ignore_for_file: file_names
+
 import 'package:ifoot_academy/actions/index.dart';
 import 'package:ifoot_academy/models/app_user.dart';
 

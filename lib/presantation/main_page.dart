@@ -3,7 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:ifoot_academy/models/app_state.dart';
-import 'package:ifoot_academy/presantation/drawer.dart';
+import 'package:ifoot_academy/presantation/Drawer/drawer.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({Key? key}) : super(key: key);
@@ -23,8 +23,8 @@ class _MainPageState extends State<MainPage> {
 
   @override
   Widget build(BuildContext context) {
-    final double _height = MediaQuery.of(context).size.height;
-    final double _width = MediaQuery.of(context).size.width;
+    final double height = MediaQuery.of(context).size.height;
+    final double width = MediaQuery.of(context).size.width;
 
     return Scaffold(
       key: _scaffoldKey,
@@ -43,28 +43,28 @@ class _MainPageState extends State<MainPage> {
         children: <Widget>[
           Container(
             color: const Color(0xff7eed9d),
-            height: _height,
-            width: _width,
+            height: height,
+            width: width,
             child: const Padding(
               padding: EdgeInsets.only(top: 100, left: 30),
             ),
           ),
           Padding(
-            padding: EdgeInsets.symmetric(vertical: 110, horizontal: _width * 0.05),
+            padding: EdgeInsets.symmetric(vertical: 110, horizontal: width * 0.05),
             child: Container(
               decoration: const BoxDecoration(
                 color: Color(0x55ffffff),
                 borderRadius: BorderRadius.all(Radius.circular(20)),
               ),
-              height: _height * 0.1,
-              width: _width * 0.9,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 5, left: 15, right: 15),
+              height: height * 0.1,
+              width: width * 0.9,
+              child: const Padding(
+                padding: EdgeInsets.only(top: 5, left: 15, right: 15),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.start,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    const Text(
+                    Text(
                       'Prochaine séance :',
                       style: TextStyle(
                         fontFamily: 'FontB',
@@ -77,7 +77,7 @@ class _MainPageState extends State<MainPage> {
                       children: <Widget>[
                         Text(
                           "Lundi 15H:30",
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: 'FontB',
                             color: Color(0xff003542),
                             fontSize: 20,
@@ -91,9 +91,9 @@ class _MainPageState extends State<MainPage> {
             ),
           ),
           Padding(
-            padding: EdgeInsets.symmetric(vertical: 200, horizontal: _width * 0.05),
-            child: Row(
-              children: const <Widget>[
+            padding: EdgeInsets.symmetric(vertical: 200, horizontal: width * 0.05),
+            child: const Row(
+              children: <Widget>[
                 Text(
                   "N'oubliez pas :",
                   style: TextStyle(
@@ -106,29 +106,29 @@ class _MainPageState extends State<MainPage> {
             ),
           ),
           Padding(
-            padding: EdgeInsets.symmetric(vertical: 240, horizontal: _width * 0.05),
+            padding: EdgeInsets.symmetric(vertical: 240, horizontal: width * 0.05),
             child: Container(
               decoration: const BoxDecoration(
                 color: Color(0x55ffffff),
                 borderRadius: BorderRadius.all(Radius.circular(20)),
               ),
-              height: _height * 0.07,
-              width: _width * 0.55,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 5, left: 15, right: 15),
+              height: height * 0.07,
+              width: width * 0.55,
+              child: const Padding(
+                padding: EdgeInsets.only(top: 5, left: 15, right: 15),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.start,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: <Widget>[
                     Text(
                       "ahhahaa",
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: 'FontB',
                         color: Color(0xff003542),
                         fontSize: 20,
                       ),
                     ),
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(top: 2),
                     ),
                   
@@ -139,14 +139,14 @@ class _MainPageState extends State<MainPage> {
           ),
           SingleChildScrollView(
             child: Padding(
-              padding: EdgeInsets.only(top: _height * 0.39),
+              padding: EdgeInsets.only(top: height * 0.39),
               child: Container(
                 decoration: const BoxDecoration(
                   color: Color(0xffffffff),
                   borderRadius: BorderRadius.only(topLeft: Radius.circular(50), topRight: Radius.circular(50)),
                 ),
-                height: _height * 0.61,
-                width: _width,
+                height: height * 0.61,
+                width: width,
                 child: Column(
                   children: [
                     const Padding(padding: EdgeInsets.all(10)),
@@ -160,15 +160,15 @@ class _MainPageState extends State<MainPage> {
                             });
                           },
                           child: Container(
-                            height: _height * 0.17,
-                            width: _width * 0.4,
+                            height: height * 0.17,
+                            width: width * 0.4,
                             decoration: const BoxDecoration(
                               color: Color(0x07000000),
                               borderRadius: BorderRadius.all(Radius.circular(20)),
                             ),
-                            child: Column(
+                            child: const Column(
                               mainAxisAlignment: MainAxisAlignment.center,
-                              children: const <Widget> [
+                              children: <Widget> [
                                 Icon(Icons.supervised_user_circle_rounded,size: 50,color: Color(0xff7eed9d),),
                                 Text(
                                   'Équipes',
@@ -188,15 +188,15 @@ class _MainPageState extends State<MainPage> {
                     //        StoreProvider.of<AppState>(context).dispatch((_onResultStadioane));
                           },
                           child: Container(
-                            height: _height * 0.17,
-                            width: _width * 0.4,
+                            height: height * 0.17,
+                            width: width * 0.4,
                             decoration: const BoxDecoration(
                               color: Color(0x07000000),
                               borderRadius: BorderRadius.all(Radius.circular(20)),
                             ),
-                            child: Column(
+                            child: const Column(
                               mainAxisAlignment: MainAxisAlignment.center,
-                              children: const <Widget> [
+                              children: <Widget> [
                                 Icon(CupertinoIcons.sportscourt_fill,size: 50,color: Color(0xff7eed9d),),
                                 Text(
                                   'Stades',
@@ -213,7 +213,7 @@ class _MainPageState extends State<MainPage> {
                         ),
                       ],
                     ),
-                    Padding(padding: EdgeInsets.all(10)),
+                    const Padding(padding: EdgeInsets.all(10)),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: <Widget>[
@@ -224,18 +224,18 @@ class _MainPageState extends State<MainPage> {
                             });
                           },
                           child: Container(
-                            height: _height * 0.17,
-                            width: _width * 0.4,
+                            height: height * 0.17,
+                            width: width * 0.4,
                             decoration: const BoxDecoration(
                               color: Color(0x07000000),
                               borderRadius: BorderRadius.all(Radius.circular(20)),
                             ),
-                            child: Column(
+                            child: const Column(
                               mainAxisAlignment: MainAxisAlignment.center,
-                              children: const <Widget> [
+                              children: <Widget> [
                                 Icon(Icons.account_circle_rounded,size: 50,color: Color(0xff7eed9d),),
                                 Text(
-                                  'Joueurs',
+                                  'joueurs',
                                   textAlign: TextAlign.start,
                                   style: TextStyle(
                                     fontFamily: 'FontR',
@@ -252,15 +252,15 @@ class _MainPageState extends State<MainPage> {
                           //  StoreProvider.of<AppState>(context).dispatch(('Atacant', _resultJoin3));
                           },
                           child: Container(
-                            height: _height * 0.17,
-                            width: _width * 0.4,
+                            height: height * 0.17,
+                            width: width * 0.4,
                             decoration: const BoxDecoration(
                               color: Color(0x07000000),
                               borderRadius: BorderRadius.all(Radius.circular(20)),
                             ),
-                            child: Column(
+                            child: const Column(
                               mainAxisAlignment: MainAxisAlignment.center,
-                              children: const <Widget> [
+                              children: <Widget> [
                                 Icon(Icons.sports_soccer_rounded,size: 50,color: Color(0xff7eed9d),),
                                 Text(
                                   'Meilleurs buteurs',
@@ -277,7 +277,7 @@ class _MainPageState extends State<MainPage> {
                         ),
                       ],
                     ),
-                    Padding(padding: EdgeInsets.all(10)),
+                    const Padding(padding: EdgeInsets.all(10)),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: <Widget>[
@@ -288,15 +288,15 @@ class _MainPageState extends State<MainPage> {
                             });
                           },
                           child: Container(
-                            height: _height * 0.17,
-                            width: _width * 0.4,
+                            height: height * 0.17,
+                            width: width * 0.4,
                             decoration: const BoxDecoration(
                               color: Color(0x07000000),
                               borderRadius: BorderRadius.all(Radius.circular(20)),
                             ),
-                            child: Column(
+                            child: const Column(
                               mainAxisAlignment: MainAxisAlignment.center,
-                              children: const <Widget> [
+                              children: <Widget> [
                                 Icon(Icons.star_rounded,size: 50,color: Color(0xff7eed9d),),
                                 Text(
                                   'Meilleurs matchs',
@@ -316,15 +316,15 @@ class _MainPageState extends State<MainPage> {
                           //  StoreProvider.of<AppState>(context).dispatch((_resultJoin6));
                           },
                           child: Container(
-                            height: _height * 0.17,
-                            width: _width * 0.4,
+                            height: height * 0.17,
+                            width: width * 0.4,
                             decoration: const BoxDecoration(
                               color: Color(0x07000000),
                               borderRadius: BorderRadius.all(Radius.circular(20)),
                             ),
-                            child: Column(
+                            child: const Column(
                               mainAxisAlignment: MainAxisAlignment.center,
-                              children: const <Widget> [
+                              children: <Widget> [
                                 Icon(Icons.sports,size: 50,color: Color(0xff7eed9d),),
                                 Text(
                                   'Entraineur',
@@ -346,9 +346,10 @@ class _MainPageState extends State<MainPage> {
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.only(top: 93, left: 240),
-            child: Container(
+          const Padding(
+            padding: EdgeInsets.only(top: 93, left: 240),
+            // ignore: unnecessary_const
+            child: const SizedBox(
               height: 35,
               width: 35,
               child: FittedBox(
@@ -359,9 +360,9 @@ class _MainPageState extends State<MainPage> {
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.only(top: 224, left: 147),
-            child: Container(
+          const Padding(
+            padding: EdgeInsets.only(top: 224, left: 147),
+            child: SizedBox(
               height: 35,
               width: 35,
               child: FittedBox(

@@ -19,7 +19,7 @@ class AppUser {
       email: json['email'] as String? ?? 'Unknown',
       name: json['name'] as String? ?? 'Unknown',
       mobile: json['mobile'] as String? ?? 'Unknown',
-      role: json['role'] as String? ?? 'USER',  // Default to 'USER' if null
+      role: json['role'] as String? ?? 'user',  // Default to 'USER' if null
     );
   }
 

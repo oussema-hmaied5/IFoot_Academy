@@ -1,3 +1,5 @@
+// ignore_for_file: library_private_types_in_public_api, unused_field, unused_element
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
@@ -21,13 +23,13 @@ class _LoginPageState extends State<LoginPage> {
   void _onResult(AppAction action) {
     setState(() => _isLoading = false);
     if (action is LoginSuccessful) {
-      Navigator.of(context).pushReplacementNamed('/main');
-    } else if (action is LoginError) {
+  final String route = action.user.role == 'admin' ? '/admin' : '/main';
+      Navigator.of(context).pushReplacementNamed(route);
+            } else if (action is LoginError) {
       setState(() {
         _errorMessage = action.error.toString();
       });
       _errorMessage = action.error.toString().replaceFirst('Exception: ', '');
-            print('Login failed: $_errorMessage');
 
     }
   }
@@ -70,7 +72,7 @@ class _LoginPageState extends State<LoginPage> {
       ),
     );
 
-    overlay?.insert(overlayEntry);
+    overlay.insert(overlayEntry);
     Future.delayed(Duration(seconds: 3), () {
       overlayEntry.remove();
     });
@@ -204,9 +206,7 @@ class _LoginPageState extends State<LoginPage> {
                           }
                           return GestureDetector(
                             onTap: () {
-                              print("Login button pressed");
                               if (!_formKey.currentState!.validate()) {
-                                print("Form validation failed");
                                 return;
                               }
                               setState(() => _isLoading = true);

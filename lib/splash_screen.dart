@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
   @override
   _SplashScreenState createState() => _SplashScreenState();
 }
@@ -21,7 +23,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     )..repeat();
 
     // Navigate to the main screen after a delay
-    Timer(Duration(seconds: 3), () {
+    Timer(const Duration(seconds: 3), () {
       Navigator.of(context).pushReplacementNamed('/');
     });
   }
@@ -37,9 +39,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [const Color.fromARGB(255, 213, 225, 247), const Color.fromARGB(255, 231, 243, 243)],
+            colors: [Color.fromARGB(255, 213, 225, 247), Color.fromARGB(255, 231, 243, 243)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -57,7 +59,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   );
                 },
                 child: Container(
-                  padding: EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(20),
                  
                   child: Image.asset(
                     'assets/Logo/logo.png', // Ensure this path is correct
@@ -67,8 +69,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   ),
                 ),
               ),
-              SizedBox(height: 20), // Add some space between the logo and the text
-              Text(
+              const SizedBox(height: 20), // Add some space between the logo and the text
+              const Text(
                 'IFoot ',
                 style: TextStyle(
                   fontSize: 28, // Adjust the font size as needed

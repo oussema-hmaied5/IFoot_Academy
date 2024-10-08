@@ -1,12 +1,16 @@
+// ignore_for_file: empty_catches
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:ifoot_academy/data/auth_api.dart';  // Import the AuthApi file
 import 'package:ifoot_academy/epics/app_epics.dart';  // Import the AppEpics file
 import 'package:ifoot_academy/models/app_state.dart';
-import 'package:ifoot_academy/presantation/login_page.dart';
+import 'package:ifoot_academy/presantation/Admin/Menu/admin_page.dart';
+import 'package:ifoot_academy/presantation/Authentification/login_page.dart';
+import 'package:ifoot_academy/presantation/Authentification/register_page.dart';
+import 'package:ifoot_academy/presantation/Profile/detailprofil_page.dart';
 import 'package:ifoot_academy/presantation/main_page.dart';
-import 'package:ifoot_academy/presantation/register_page.dart';
 import 'package:ifoot_academy/reducers/app_reducer.dart';
 import 'package:ifoot_academy/splash_screen.dart';
 import 'package:redux/redux.dart';
@@ -17,9 +21,7 @@ void main() async {
 
   try {
     await Firebase.initializeApp();
-    print("Firebase initialized successfully");
   } catch (e) {
-    print("Firebase initialization failed: $e");
   }
 
   final AuthApi authApi = AuthApi();  // Create an instance of AuthApi
@@ -53,7 +55,12 @@ class MyApp extends StatelessWidget {
           '/': (context) => const LoginPage(),
           '/main': (context) => const MainPage(),
           '/register': (context) => const RegisterPage(),
-          '/splash': (context) => SplashScreen(),  // Define your routes
+          '/splash': (context) => const SplashScreen(),  
+          '/admin': (context) => const AdminMainPage(),
+          '/profile': (context) => const ProfileDetailsPage(), 
+ 
+
+
         },
       ),
     );
