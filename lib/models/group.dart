@@ -1,35 +1,30 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class Group {
   final String id;
   final String name;
-  final String coach;
   final List<String> players;
-  final Map<String, dynamic> trainingSchedule;
 
   Group({
     required this.id,
-    this.name = '', // Default value to avoid null
-    this.coach = '', // Default value to avoid null
+    this.name = '',
     required this.players,
-    required this.trainingSchedule,
   });
 
-  factory Group.fromJson(Map<String, dynamic> json) {
+  // Use Firestore DocumentSnapshot to extract the id and other fields
+  factory Group.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
     return Group(
-      id: json['id'] ?? '', // Ensure id is not null
-      name: json['name'] ?? '', // Default empty string if null
-      coach: json['coach'] ?? '', // Default empty string if null
-      players: List<String>.from(json['players'] ?? []), // Handle null case for players
-      trainingSchedule: json['trainingSchedule'] ?? {}, // Default to empty map if null
+      id: doc.id, // Ensure the document ID is used
+      name: data['name'] ?? '',
+      players: List<String>.from(data['players'] ?? []),
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
       'name': name,
-      'coach': coach,
       'players': players,
-      'trainingSchedule': trainingSchedule,
     };
   }
 }

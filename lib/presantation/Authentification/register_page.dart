@@ -1,9 +1,9 @@
-// ignore_for_file: unnecessary_type_check, library_private_types_in_public_api, unused_field, sort_child_properties_last
-
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
-import 'package:ifoot_academy/actions/index.dart';
+import 'package:ifoot_academy/actions/auth_actions.dart';
 import 'package:ifoot_academy/models/app_state.dart';
+import 'package:intl/intl.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({Key? key}) : super(key: key);
@@ -13,16 +13,19 @@ class RegisterPage extends StatefulWidget {
 }
 
 class _RegisterPageState extends State<RegisterPage> {
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>(); 
   final TextEditingController _email = TextEditingController();
-  final TextEditingController _fullName = TextEditingController();
+  final TextEditingController _fullName = TextEditingController(); 
   final TextEditingController _phoneNumber = TextEditingController();
   final TextEditingController _password = TextEditingController();
   final TextEditingController _rePassword = TextEditingController();
   bool _isLoading = false;
 
-  late OverlayEntry _overlayEntry;
+  bool _isCoach = false;
+  bool _isJoueur = false;
+  DateTime? _selectedDate; 
 
-void _onResult(AppAction action) {
+ void _onResult(AppAction action) {
   setState(() {
     _isLoading = false;
     if (action is! RegisterError) {
@@ -31,310 +34,266 @@ void _onResult(AppAction action) {
       _phoneNumber.clear();
       _password.clear();
       _rePassword.clear();
-      _showSuccessDialog();
-    } else if (action is RegisterError) {
-      // Modify the error message to remove the word "Exception"
+      _selectedDate = null;
+
+      // Call the function to increment the registration count
+      _incrementRegistrationCount();
+
+      Navigator.of(context).popUntil((route) => route.isFirst);
     }
   });
 }
 
-  void _showSuccessDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Registration Successful'),
-          content: const Text('Thank you for registering. Please wait for admin approval.'),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).pushNamed('/');
-              },
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
-  }
+void _incrementRegistrationCount() async {
+  FirebaseFirestore firestore = FirebaseFirestore.instance;
 
+  // Increment the 'inscriptionCount' field in Firestore
+  firestore.collection('stats').doc('academyStats').update({
+    'inscriptionCount': FieldValue.increment(1),
+  });
+}
+
+
+  Future<void> _selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null && picked != _selectedDate) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final double height = MediaQuery.of(context).size.height;
     final double width = MediaQuery.of(context).size.width;
+
     return Scaffold(
       body: Stack(
         alignment: Alignment.topCenter,
         children: <Widget>[
+          // Background image
           Container(
-            color: const Color.fromARGB(255, 101, 200, 240),
             height: height,
             width: width,
-            child: const Padding(
-              padding: EdgeInsets.only(top: 100, left: 30),
-              child: Text(
-                'Register.',
-                style: TextStyle(color: Color(0xff003542), fontSize: 30, fontFamily: 'FontB'),
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('assets/images/regis.jpg'), // Your background image
+                fit: BoxFit.cover,
               ),
             ),
           ),
-          SingleChildScrollView(
-            child: Padding(
-              padding: EdgeInsets.only(top: height * 0.2),
-              child: Container(
-                decoration: const BoxDecoration(
-                  color: Color(0xffffffff),
-                  borderRadius: BorderRadius.only(topLeft: Radius.circular(50), topRight: Radius.circular(50)),
+          Positioned(
+            top: height * 0.2,
+            child: Container(
+              width: width,
+              height: height * 0.8,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.85), 
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(50),
+                  topRight: Radius.circular(50),
                 ),
-                height: height * 0.8,
-                width: width,
-                child: Form(
-                  child: Column(
-                    children: <Widget>[
-                      Expanded(
-                        child: Container(),
-                        flex: 8,
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 30),
-                        child: TextFormField(
-                          style: const TextStyle(fontFamily: 'FontR'),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: SingleChildScrollView(
+                  child: Form(
+                    key: _formKey, 
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        // Email field
+                        TextFormField(
                           controller: _email,
                           decoration: const InputDecoration(
-                            labelText: 'Email',
+                            labelText: 'Adresse email',
                           ),
                           keyboardType: TextInputType.emailAddress,
-                          onChanged: (String value) {},
                           validator: (String? value) {
                             if (value == null || value.isEmpty) {
-                              return 'Please enter an email address';
+                              return 'Veuillez entrer une adresse email';
                             } else if (!value.contains('@') || !value.contains('.')) {
-                              return 'Please enter a valid email address';
+                              return 'Veuillez entrer une adresse email valide';
                             }
-
                             return null;
                           },
                         ),
-                      ),
-                      Expanded(
-                        child: Container(),
-                        flex: 2,
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 30),
-                        child: TextFormField(
-                          style: const TextStyle(fontFamily: 'FontR'),
-                          controller: _fullName,
-                          decoration: const InputDecoration(
-                            labelText: 'Full Name',
-                          ),
-                          keyboardType: TextInputType.name,
-                          onChanged: (String value) {},
-                          validator: (String? value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter your name';
-                            } else if (value.length < 4 || value.length > 24) {
-                              return 'Name must be between 4 and 24 characters';
-                            }
+                        const SizedBox(height: 16),
 
-                            if (value.contains(RegExp(r'[!-&]')) ||
-                                value.contains(RegExp(r'[(-@]')) ||
-                                value.contains(RegExp(r'[[-`]'))) {
-                              return 'Name must contain only letters';
-                            }
-
-                            return null;
-                          },
-                        ),
-                      ),
-                      Expanded(
-                        child: Container(),
-                        flex: 2,
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 30),
-                        child: TextFormField(
-                          style: const TextStyle(fontFamily: 'FontR'),
+                        // Phone Number field
+                        TextFormField(
                           controller: _phoneNumber,
                           decoration: const InputDecoration(
-                            labelText: 'Phone Number',
+                            labelText: 'Numéro de téléphone',
                           ),
-                          keyboardType: TextInputType.number,
-                          onChanged: (String value) {},
+                          keyboardType: TextInputType.phone,
                           validator: (String? value) {
                             if (value == null || value.isEmpty) {
-                              return 'Please enter your phone number';
-                            } else if (
-                                value.contains(RegExp(r'[!-/]')) ||
-                                value.contains(RegExp(r'[:-~]'))) {
-                              return 'Invalid phone number';
+                              return 'Veuillez entrer votre numéro de téléphone';
                             }
-
                             return null;
                           },
                         ),
-                      ),
-                      Expanded(
-                        child: Container(),
-                        flex: 2,
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 30),
-                        child: TextFormField(
-                          style: const TextStyle(fontFamily: 'FontR'),
+                        const SizedBox(height: 16),
+
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8.0),
+                          child: Text(
+                            'Vous êtes :',
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.red,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+
+                        // Checkboxes for "Coach" and "Joueur"
+                        Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: CheckboxListTile(
+                                title: const Text('Coach'),
+                                value: _isCoach,
+                                onChanged: (bool? value) {
+                                  setState(() {
+                                    _isCoach = value ?? false;
+                                    _isJoueur = !_isCoach;
+                                  });
+                                },
+                              ),
+                            ),
+                            Expanded(
+                              child: CheckboxListTile(
+                                title: const Text('Joueur'),
+                                value: _isJoueur,
+                                onChanged: (bool? value) {
+                                  setState(() {
+                                    _isJoueur = value ?? false;
+                                    _isCoach = !_isJoueur;
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        if (_isCoach) ...[
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _fullName,
+                            decoration: const InputDecoration(
+                              labelText: 'Nom du Coach',
+                            ),
+                            validator: (String? value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Veuillez entrer le nom du coach';
+                              }
+                              return null;
+                            },
+                          ),
+                        ],
+
+                        if (_isJoueur) ...[
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _fullName,
+                            decoration: const InputDecoration(
+                              labelText: 'Nom du Joueur',
+                            ),
+                            validator: (String? value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Veuillez entrer le nom du joueur';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+
+                          TextFormField(
+                            readOnly: true,
+                            onTap: () => _selectDate(context),
+                            decoration: InputDecoration(
+                              labelText: 'Date de naissance',
+                              hintText: _selectedDate != null
+                                  ? DateFormat('yyyy-MM-dd').format(_selectedDate!)
+                                  : 'Choisir une date',
+                              suffixIcon: const Icon(Icons.calendar_today),
+                            ),
+                            validator: (String? value) {
+                              if (_selectedDate == null) {
+                                return 'Veuillez sélectionner la date de naissance';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+
+                        // Password fields
+                        TextFormField(
                           controller: _password,
                           decoration: const InputDecoration(
-                            labelText: 'Password',
+                            labelText: 'Mot de passe',
                           ),
-                          keyboardType: TextInputType.visiblePassword,
-                          onChanged: (String value) {},
                           obscureText: true,
                           validator: (String? value) {
                             if (value == null || value.isEmpty) {
-                              return 'Please enter a password';
-                            } else if (value.length < 6 || value.length > 24) {
-                              return 'Password has to be between 6 and 24 characters';
+                              return 'Veuillez entrer un mot de passe';
                             }
-
-                            if (!value.contains(RegExp(r'[!-`]'))) {
-                              return 'Password must contain a capital letter, a number or a symbol';
-                            }
-
                             return null;
                           },
                         ),
-                      ),
-                      Expanded(
-                        child: Container(),
-                        flex: 2,
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 30),
-                        child: TextFormField(
-                          style: const TextStyle(fontFamily: 'FontR'),
+                        const SizedBox(height: 16),
+
+                        TextFormField(
                           controller: _rePassword,
                           decoration: const InputDecoration(
-                            labelText: 're-Password',
+                            labelText: 'Confirmez le mot de passe',
                           ),
-                          keyboardType: TextInputType.visiblePassword,
-                          onChanged: (String value) {},
                           obscureText: true,
                           validator: (String? value) {
                             if (value != _password.text) {
-                              return "Password doesn't match";
+                              return "Les mots de passe ne correspondent pas";
                             }
-
                             return null;
                           },
                         ),
-                      ),
-                      Expanded(
-                        child: Container(),
-                        flex: 2,
-                      ),
-                      Expanded(
-                        child: Container(),
-                        flex: 6,
-                      ),
-                      Builder(
-                        builder: (BuildContext context) {
-                          if (_isLoading) {
-                            return const Center(
-                              child: CircularProgressIndicator(),
-                            );
-                          }
-                          return GestureDetector(
-                            onTap: () async {
-                              if (!Form.of(context).validate()) {
-                                return;
-                              }
+                        const SizedBox(height: 32),
+
+                        if (_isLoading)
+                          const Center(
+                            child: CircularProgressIndicator(),
+                          )
+                        else
+                          ElevatedButton(
+                            onPressed: () async {
+                              if (!_formKey.currentState!.validate()) return;
                               setState(() => _isLoading = true);
                               StoreProvider.of<AppState>(context).dispatch(
                                 RegisterStart(
                                   mobile: _phoneNumber.text,
                                   email: _email.text,
                                   name: _fullName.text,
+                                  dateOfBirth: _isJoueur && _selectedDate != null
+                                      ? DateFormat('yyyy-MM-dd').format(_selectedDate!)
+                                      : '',
                                   password: _password.text,
-                                  role: 'pending', // Set role as pending
+                                  role: _isCoach ? 'coach' : 'joueur',
                                   result: _onResult,
                                 ),
                               );
                             },
-                            child: ClipRRect(
-                              borderRadius: const BorderRadius.all(Radius.circular(50)),
-                              child: Container(
-                                height: MediaQuery.of(context).size.height * 0.06,
-                                width: MediaQuery.of(context).size.width * 0.8,
-                                decoration: const BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: <Color>[
-                                      Color(0xff7eed9d),
-                                      Color(0xdd7eed9d),
-                                    ],
-                                  ),
-                                ),
-                                child: Align(
-                                  alignment: Alignment.center,
-                                  child: Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      vertical: MediaQuery.of(context).size.height * 0.008,
-                                    ),
-                                    child: const FittedBox(
-                                      child: Text(
-                                        'SIGN UP',
-                                        style: TextStyle(
-                                          fontFamily: 'FontB',
-                                          color: Colors.white,
-                                          fontSize: 28,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      Expanded(
-                        child: Container(),
-                        flex: 2,
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: <Widget>[
-                          const Text(
-                            'Do you have an account? ',
-                            style: TextStyle(
-                              fontFamily: 'FontR',
-                              color: Color(0xff003542),
-                              fontSize: 18,
-                            ),
+                            child: const Text('S\'inscrire'),
                           ),
-                          GestureDetector(
-                            onTap: () {
-                              Navigator.of(context).pushNamed('/');
-                            },
-                            child: const Text(
-                              'Login',
-                              style: TextStyle(
-                                fontFamily: 'FontB',
-                                color: Color(0xff7eed9d),
-                                fontSize: 18,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Expanded(
-                        child: Container(),
-                        flex: 6,
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

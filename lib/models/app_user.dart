@@ -4,6 +4,7 @@ class AppUser {
   final String name;
   final String mobile;
   final String role;
+  final String? dateOfBirth;
 
   AppUser({
     required this.id,
@@ -11,6 +12,7 @@ class AppUser {
     required this.name,
     required this.mobile,
     required this.role,
+    this.dateOfBirth,
   });
 
   factory AppUser.fromJson(Map<String, dynamic> json) {
@@ -19,7 +21,8 @@ class AppUser {
       email: json['email'] as String? ?? 'Unknown',
       name: json['name'] as String? ?? 'Unknown',
       mobile: json['mobile'] as String? ?? 'Unknown',
-      role: json['role'] as String? ?? 'user',  // Default to 'USER' if null
+      role: json['role'] as String? ?? 'user', 
+      dateOfBirth: json['dateOfBirth'] as String?, 
     );
   }
 
@@ -30,6 +33,7 @@ class AppUser {
       'name': name,
       'mobile': mobile,
       'role': role,
+      'dateOfBirth': dateOfBirth, 
     };
   }
 }

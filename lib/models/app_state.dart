@@ -5,15 +5,11 @@ class AppState {
 
   AppState({this.user});
 
-  // Initial state factory
-  factory AppState.initial() {
-    return AppState(user: null);
+  AppState copyWith({AppUser? user}) {
+    return AppState(user: user ?? this.user);
   }
 
-  // Copy with method
-  AppState copyWith({AppUser? user}) {
-    return AppState(
-      user: user ?? this.user,
-    );
+  factory AppState.initial() {
+    return AppState(user: null);
   }
 }

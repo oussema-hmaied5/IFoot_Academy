@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:ifoot_academy/models/app_state.dart';
 import 'package:ifoot_academy/models/app_user.dart';
+import 'package:intl/intl.dart'; // For formatting the date
 import 'package:redux/redux.dart';
 
 class ProfileDetailsPage extends StatefulWidget {
@@ -15,7 +16,9 @@ class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
   late TextEditingController _nameController;
   late TextEditingController _emailController;
   late TextEditingController _mobileController;
+  late TextEditingController _parentNameController; // For parent's name
   late String _selectedRole;
+  DateTime? _selectedDateOfBirth; // For date of birth
 
   @override
   void didChangeDependencies() {
@@ -28,10 +31,10 @@ class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
       _emailController = TextEditingController(text: user.email);
       _mobileController = TextEditingController(text: user.mobile);
       _selectedRole = user.role;
+      _selectedDateOfBirth = user.dateOfBirth != null ? DateTime.parse(user.dateOfBirth!) : null;
 
-      // Ensure _selectedRole is in the dropdown items
       if (!_roles().contains(_selectedRole)) {
-        _selectedRole = _roles().first; // Default to the first role if not in the list
+        _selectedRole = _roles().first;
       }
     }
   }
@@ -41,6 +44,7 @@ class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
     _nameController.dispose();
     _emailController.dispose();
     _mobileController.dispose();
+    _parentNameController.dispose();
     super.dispose();
   }
 
@@ -81,6 +85,19 @@ class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
                 controller: _mobileController,
                 decoration: const InputDecoration(labelText: 'Mobile'),
                 keyboardType: TextInputType.phone,
+              ),           
+              const SizedBox(height: 8),
+              ListTile(
+                title: const Text('Date of Birth'),
+                subtitle: Text(
+                  _selectedDateOfBirth != null
+                      ? DateFormat('yyyy-MM-dd').format(_selectedDateOfBirth!)
+                      : 'No date selected',
+                ),
+                trailing: IconButton(
+                  icon: const Icon(Icons.calendar_today),
+                  onPressed: () => _selectDate(context),
+                ),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
@@ -113,7 +130,21 @@ class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
   }
 
   List<String> _roles() {
-    return ['admin', 'coach', 'user', 'joueur', 'pending'];
+    return ['admin', 'coach', 'joueur'];
+  }
+
+  Future<void> _selectDate(BuildContext context) async {
+    final DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _selectedDateOfBirth ?? DateTime.now(),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+    );
+    if (pickedDate != null && pickedDate != _selectedDateOfBirth) {
+      setState(() {
+        _selectedDateOfBirth = pickedDate;
+      });
+    }
   }
 
   void _saveProfile(BuildContext context) {
@@ -124,26 +155,25 @@ class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
       email: _emailController.text,
       mobile: _mobileController.text,
       role: _selectedRole,
+      dateOfBirth: _selectedDateOfBirth != null
+          ? DateFormat('yyyy-MM-dd').format(_selectedDateOfBirth!)
+          : null,
     );
 
-    // Dispatch an action to update the user in the store
     store.dispatch(UpdateUserAction(updatedUser));
 
-    // Optionally show a confirmation message
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Profile updated successfully')),
     );
   }
 }
 
-// Assuming you have an action like this defined in your Redux setup
 class UpdateUserAction {
   final AppUser updatedUser;
 
   UpdateUserAction(this.updatedUser);
 }
 
-// Custom capitalize function
 String capitalize(String s) {
   if (s.isEmpty) return s;
   return s[0].toUpperCase() + s.substring(1).toLowerCase();

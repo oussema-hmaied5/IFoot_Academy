@@ -1,16 +1,13 @@
-import 'package:ifoot_academy/presantation/Drawer/drawer.dart';
-
-import '../actions/index.dart';
+import '../actions/auth_actions.dart';
 import '../models/app_state.dart';
 
 AppState appReducer(AppState state, dynamic action) {
   if (action is LoginSuccessful) {
     return state.copyWith(user: action.user);
   } else if (action is RegisterSuccessful) {
-    return state.copyWith(); // Assuming no user data on registration
+    return state.copyWith();  // Modify state accordingly
   } else if (action is LoginError || action is RegisterError) {
-    // Handle errors if needed
-    return state;
+    return state;  // Handle errors if needed
   } else if (action is SignOut) {
     return AppState.initial();
   }

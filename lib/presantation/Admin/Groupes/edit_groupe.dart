@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:ifoot_academy/models/group.dart';
 
+import '../Menu/footer.dart';
+
 class EditGroupPage extends StatefulWidget {
   final Group group;
 
@@ -13,201 +15,170 @@ class EditGroupPage extends StatefulWidget {
 
 class _EditGroupPageState extends State<EditGroupPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  late TextEditingController _groupNameController;
-  String? _selectedCoach;
-  List<String> _coaches = [];
-  bool _showAssignmentSection = false;
-
-  // Variables for player assignment and training schedule
+  final TextEditingController _groupNameController = TextEditingController();
   final List<String> _selectedPlayers = [];
-  final List<String> _allPlayers = [];
-  DateTime? _selectedDate;
-  TimeOfDay? _selectedTime;
+  List<DocumentSnapshot> _availablePlayers = [];
 
   @override
   void initState() {
     super.initState();
-    _groupNameController = TextEditingController(text: widget.group.name);
-    _selectedCoach = widget.group.coach;
-    _fetchCoaches();
-    _fetchPlayers(); // Fetch all players
+    _groupNameController.text = widget.group.name;
+    _selectedPlayers.addAll(widget.group.players);
+    _fetchAvailablePlayers();
   }
 
-  void _fetchCoaches() async {
-    final snapshot = await _firestore.collection('users').where('role', isEqualTo: 'coach').get();
-    final coaches = snapshot.docs.map((doc) => doc.data()['name'] as String).toSet().toList();
-    setState(() {
-      _coaches = coaches;
-    });
-  }
-
-  void _fetchPlayers() async {
-    final snapshot = await _firestore.collection('users').where('role', isEqualTo: 'joueur').get();
-    final players = snapshot.docs.map((doc) => doc.data()['name'] as String).toList();
-    setState(() {
-      _allPlayers.addAll(players); // Add all players to the list
-    });
-  }
-
-  // Method to save the group with the updated information
-  void _saveGroup() async {
+  void _fetchAvailablePlayers() async {
     try {
-      // Ensure group name and coach are not empty
-      if (_groupNameController.text.isEmpty || _selectedCoach == null) {
-        print('Error: Group name or coach is not set');
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Please enter a group name and select a coach'),
-        ));
-        return;
-      }
+      QuerySnapshot playersSnapshot = await _firestore
+          .collection('users')
+          .where('role',
+              isEqualTo: 'joueur') // Ensure we only fetch players (joueur role)
+          .get();
 
-      // Update the group with new data in Firestore
-      await _firestore.collection('groups').doc(widget.group.id).update({
-        'name': _groupNameController.text,   // Ensure the correct name is saved
-        'coach': _selectedCoach!,            // Ensure the correct coach is saved
-        'players': _selectedPlayers,         // Save players
-        'trainingSchedule': {
-          'date': _selectedDate?.toIso8601String(),  // Cast date directly to ISO8601
-          'time': _selectedTime?.format(context),    // Cast time to formatted string
-        },
+      setState(() {
+        _availablePlayers = playersSnapshot.docs.where((playerDoc) {
+          final Map<String, dynamic> data =
+              playerDoc.data() as Map<String, dynamic>;
+
+          // Check if 'assignedGroups' field exists, if not assume it's an empty list
+          final List<dynamic> assignedGroups =
+              data.containsKey('assignedGroups')
+                  ? data['assignedGroups'] as List<dynamic>
+                  : [];
+
+          // Ensure players already in _selectedPlayers (current group) are shown
+          return assignedGroups.isEmpty ||
+              _selectedPlayers.contains(playerDoc.id);
+        }).toList();
       });
-
-      // Navigate back to the ManageGroupsPage and indicate that changes were made
-      Navigator.of(context).pop(true);
     } catch (e) {
-      print('Error saving group: $e');
+      print('Error fetching players: $e');
     }
   }
+
+void _saveGroup() async {
+  try {
+    // Obtenez les joueurs actuellement dans le groupe
+    List<String> currentPlayers = widget.group.players;
+
+    // Vérifiez quels joueurs ont été retirés
+    List<String> removedPlayers = currentPlayers.where((playerId) => !_selectedPlayers.contains(playerId)).toList();
+    
+    // Vérifiez quels joueurs ont été ajoutés
+    List<String> addedPlayers = _selectedPlayers.where((playerId) => !currentPlayers.contains(playerId)).toList();
+
+    // Mettre à jour les joueurs retirés
+    for (String playerId in removedPlayers) {
+      await _firestore.collection('users').doc(playerId).update({
+        'assignedGroups': FieldValue.arrayRemove([widget.group.id]),
+      });
+    }
+
+    // Mettre à jour les joueurs ajoutés
+    for (String playerId in addedPlayers) {
+      await _firestore.collection('users').doc(playerId).update({
+        'assignedGroups': FieldValue.arrayUnion([widget.group.id]),
+      });
+    }
+
+    // Mettre à jour le groupe avec le nouveau nom et les nouveaux joueurs
+    await _firestore.collection('groups').doc(widget.group.id).update({
+      'name': _groupNameController.text,
+      'players': _selectedPlayers,
+    });
+
+    Navigator.of(context).pop(); // Go back after saving
+  } catch (e) {
+    print('Error saving group: $e');
+  }
+}
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey[200], // Light background color
       appBar: AppBar(
         title: const Text('Edit Group'),
-        // Save button added in AppBar
+        centerTitle: true,
+        backgroundColor: Colors.deepPurple, // Add a color for the header
         actions: [
           IconButton(
             icon: const Icon(Icons.save),
-            onPressed: _saveGroup, // Save button calls the _saveGroup method
+            onPressed: _saveGroup,
           ),
         ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              TextField(
-                controller: _groupNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Group Name',
-                  hintText: 'Enter group name',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Entête section
+            Text(
+              'Edit the Group:',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.deepPurple, // Color for the entête
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Group Name Input Field
+            TextField(
+              controller: _groupNameController,
+              decoration: InputDecoration(
+                labelText: 'Group Name',
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12.0),
                 ),
               ),
-              const SizedBox(height: 20),
-              const Text('Select Coach'),
-              DropdownButton<String>(
-                hint: const Text('Select Coach'),
-                value: _selectedCoach != null && _coaches.contains(_selectedCoach) ? _selectedCoach : null,
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _selectedCoach = newValue;
-                  });
-                },
-                items: _coaches.map<DropdownMenuItem<String>>((String value) {
-                  return DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value),
-                  );
-                }).toList(),
+            ),
+            const SizedBox(height: 20),
+
+            // Players list
+            Text(
+              'Select Players:',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.deepPurple,
               ),
-              const SizedBox(height: 20),
+            ),
+            const SizedBox(height: 10),
 
-              // Row containing two buttons: one for assigning players, and one for date & time
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  ElevatedButton(
-                    onPressed: () {
-                      // Show player selection list
-                      setState(() {
-                        _showAssignmentSection = !_showAssignmentSection;
-                      });
-                    },
-                    child: const Text('Assign Players'),
-                  ),
-                  ElevatedButton(
-                    onPressed: () async {
-                      // Show date picker
-                      final DateTime? pickedDate = await showDatePicker(
-                        context: context,
-                        initialDate: DateTime.now(),
-                        firstDate: DateTime(2021),
-                        lastDate: DateTime(2030),
-                      );
-                      if (pickedDate != null) {
+            Expanded(
+              child: ListView.builder(
+                itemCount: _availablePlayers.length,
+                itemBuilder: (context, index) {
+                  final playerDoc = _availablePlayers[index];
+                  return Card(
+                    elevation: 3,
+                    margin: const EdgeInsets.symmetric(vertical: 5),
+                    child: CheckboxListTile(
+                      title: Text(playerDoc['name']),
+                      value: _selectedPlayers.contains(playerDoc.id),
+                      activeColor: Colors.deepPurple, // Checkbox color
+                      onChanged: (bool? value) {
                         setState(() {
-                          _selectedDate = pickedDate;
+                          if (value == true) {
+                            _selectedPlayers.add(playerDoc.id);
+                          } else {
+                            _selectedPlayers.remove(playerDoc.id);
+                          }
                         });
-                      }
-
-                      // Show time picker
-                      final TimeOfDay? pickedTime = await showTimePicker(
-                        context: context,
-                        initialTime: TimeOfDay.now(),
-                      );
-                      if (pickedTime != null) {
-                        setState(() {
-                          _selectedTime = pickedTime;
-                        });
-                      }
-                    },
-                    child: const Text('Assign Date & Time'),
-                  ),
-                ],
-              ),
-
-              // Show the player selection and training schedule if toggled
-              Visibility(
-                visible: _showAssignmentSection,
-                child: Column(
-                  children: [
-                    const SizedBox(height: 20),
-                    const Text('Assign Players'),
-                    // Make sure the ListView has a constrained height
-                    Container(
-                      height: 200,  // Set a fixed height for the player list
-                      child: ListView.builder(
-                        itemCount: _allPlayers.length,
-                        itemBuilder: (context, index) {
-                          return CheckboxListTile(
-                            title: Text(_allPlayers[index]),
-                            value: _selectedPlayers.contains(_allPlayers[index]),
-                            onChanged: (bool? value) {
-                              setState(() {
-                                if (value == true) {
-                                  _selectedPlayers.add(_allPlayers[index]);
-                                } else {
-                                  _selectedPlayers.remove(_allPlayers[index]);
-                                }
-                              });
-                            },
-                          );
-                        },
-                      ),
+                      },
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
-
-              const SizedBox(height: 20),
-              if (_selectedDate != null) Text('Selected Date: ${_selectedDate!.toLocal().toString().split(' ')[0]}'),
-              if (_selectedTime != null) Text('Selected Time: ${_selectedTime!.format(context)}'),
-              const SizedBox(height: 20),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
+      bottomNavigationBar: Footer(currentIndex: 2),
     );
   }
 }
