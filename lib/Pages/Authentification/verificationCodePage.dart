@@ -1,3 +1,5 @@
+// ignore_for_file: file_names, library_private_types_in_public_api
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -29,7 +31,9 @@ class _VerificationCodePageState extends State<VerificationCodePage> {
       final verificationResult = await FirebaseAuth.instance
           .checkActionCode(_codeController.text.trim()); // Exemple d'appel
 
+      // ignore: unnecessary_null_comparison
       if (verificationResult != null) {
+        // ignore: use_build_context_synchronously
         Navigator.of(context)
             .pushReplacementNamed('/reset-password', arguments: widget.email);
       } else {

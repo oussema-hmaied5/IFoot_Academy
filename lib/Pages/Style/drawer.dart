@@ -1,3 +1,5 @@
+// ignore_for_file: library_private_types_in_public_api, use_build_context_synchronously
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -20,7 +22,7 @@ class _DrawerAppState extends State<DrawerApp> {
   }
 
   Future<void> _loadUserData() async {
-    try {
+ 
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         final doc = await FirebaseFirestore.instance
@@ -34,9 +36,7 @@ class _DrawerAppState extends State<DrawerApp> {
           });
         }
       }
-    } catch (e) {
-      print('Error loading user data: $e');
-    }
+   
   }
 
   void _signOut() async {
@@ -128,8 +128,14 @@ class _DrawerAppState extends State<DrawerApp> {
                   _buildMenuItem(Icons.group, 'Mon Équipe', () {
                     Navigator.of(context).pushNamed('/myTeam');
                   }),
-                  _buildMenuItem(Icons.contact_mail, 'Contact Us', () {
+                  _buildMenuItem(Icons.info, 'About Us', () {
+                    Navigator.of(context).pushNamed('/aboutUs');
+                  }),
+                  _buildMenuItem(Icons.contact_phone, 'Contact Us', () {
                     Navigator.of(context).pushNamed('/contactUs');
+                  }),
+                  _buildMenuItem(Icons.feedback, 'Feedback', () {
+                    Navigator.of(context).pushNamed('/feedback');
                   }),
                   const Divider(),
                   _buildMenuItem(Icons.notifications, 'Notifications', () {

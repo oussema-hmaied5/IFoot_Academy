@@ -48,6 +48,8 @@ android {
         targetSdkVersion 34
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
+        multiDexEnabled true
+
     }
 
     buildTypes {
@@ -62,6 +64,11 @@ flutter {
 }
 
 dependencies {
+    implementation 'com.google.firebase:firebase-messaging'
     implementation platform('com.google.firebase:firebase-bom:33.1.2')
     implementation 'com.google.firebase:firebase-analytics'
+    implementation 'androidx.multidex:multidex:2.0.1'
+        implementation("com.google.firebase:firebase-auth")
+
+
 }
