@@ -10,23 +10,23 @@ class TemplatePageBack extends StatelessWidget {
   final String title;
   final Widget body;
   final int footerIndex;
-  final bool isCoach; // Determines if in coach space or player space
+  final bool isCoach;
   final FloatingActionButton? floatingActionButton;
-  final List<Widget>? actions; // Added actions parameter to allow AppBar buttons
+  final List<Widget>? actions;
 
   const TemplatePageBack({
     Key? key,
     required this.title,
     required this.body,
     this.footerIndex = 0,
-    this.isCoach = false, // Default is player space
+    this.isCoach = false,
     this.floatingActionButton,
-    this.actions, // Allow optional actions
+    this.actions,
   }) : super(key: key);
 
   Future<String> _fetchUserName() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return 'Utilisateur'; // Fallback if user is not logged in
+    if (user == null) return 'Utilisateur';
 
     try {
       final userDoc = await FirebaseFirestore.instance
@@ -35,12 +35,12 @@ class TemplatePageBack extends StatelessWidget {
           .get();
 
       if (userDoc.exists && userDoc.data() != null) {
-        return userDoc.data()!['name'] ?? 'Utilisateur'; // Use 'name' field
+        return userDoc.data()!['name'] ?? 'Utilisateur';
       } else {
         return 'Utilisateur';
       }
     } catch (e) {
-      return 'Utilisateur'; // Fallback in case of an error
+      return 'Utilisateur';
     }
   }
 
@@ -55,7 +55,7 @@ class TemplatePageBack extends StatelessWidget {
           appBar: AppBar(
             title: Text(title),
             backgroundColor: const Color.fromARGB(255, 23, 97, 116),
-            actions: actions, // Use the actions parameter
+            actions: actions,
           ),
           drawer: DrawerBApp(
             userName: userName,

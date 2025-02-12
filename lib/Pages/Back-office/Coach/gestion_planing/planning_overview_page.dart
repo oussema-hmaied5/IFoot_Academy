@@ -1,3 +1,5 @@
+// ignore_for_file: library_private_types_in_public_api, use_build_context_synchronously
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:ifoot_academy/Pages/Back-office/Backend_template.dart';
@@ -95,8 +97,8 @@ Future<String> _fetchGroupType(String groupId) async {
     if (groupDoc.exists && groupDoc.data() != null) {
       return groupDoc.data()!['type'] ?? 'Inconnu';
     }
+  // ignore: empty_catches
   } catch (e) {
-    print('Erreur lors de la récupération du type de groupe : $e');
   }
   return 'Inconnu';
 }
@@ -115,7 +117,6 @@ Future<String> _fetchGroupType(String groupId) async {
         }),
       );
     } catch (e) {
-      print('Erreur lors de la récupération des noms des coachs : $e');
       return [];
     }
   }

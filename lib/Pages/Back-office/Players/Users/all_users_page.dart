@@ -2,6 +2,7 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart'; // Import for date formatting
 
 import '../../Backend_template.dart';
 import 'edituserpage.dart';
@@ -21,15 +22,10 @@ class _ManageUsersPageState extends State<ManageUsersPage> {
   final TextEditingController _searchController = TextEditingController();
 
   @override
-  void initState() {
-    super.initState();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return TemplatePageBack(
       title: 'Gestion des Utilisateurs',
-      footerIndex: 1, 
+      footerIndex: 1,
       body: Column(
         children: [
           _buildSearchBox(), // Add search box
@@ -71,13 +67,21 @@ class _ManageUsersPageState extends State<ManageUsersPage> {
                         filteredDocuments[index].data() as Map<String, dynamic>;
 
                     return Card(
+                      
                       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
                       child: ListTile(
+                        
                         title: Text(user['name']),
-                        subtitle: Text('Rôle: ${user['role']}'),
+                        subtitle: Text('Numéro: ${user['phone']}'),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            IconButton(
+                              icon: const Icon(Icons.people, color: Colors.green), // Fetch children icon
+                              onPressed: () {
+                                _fetchChildren(filteredDocuments[index].id);
+                              },
+                            ),
                             IconButton(
                               icon: const Icon(Icons.edit, color: Colors.blue),
                               onPressed: () {
@@ -109,7 +113,6 @@ class _ManageUsersPageState extends State<ManageUsersPage> {
       ),
     );
   }
-
 
   Widget _buildSearchBox() {
     return Padding(
@@ -144,6 +147,97 @@ class _ManageUsersPageState extends State<ManageUsersPage> {
       );
     }
   }
+
+  // Fetch and display children of a user
+ void _fetchChildren(String userId) async {
+  try {
+    QuerySnapshot childrenSnapshot = await _firestore
+        .collection('children') // Corrected: Directly querying the children collection
+        .where('parentId', isEqualTo: userId) // Match children with the given parentId
+        .get();
+
+    List<Map<String, dynamic>> children = childrenSnapshot.docs
+        .map((doc) => doc.data() as Map<String, dynamic>)
+        .toList();
+
+    _showChildrenDialog(children);
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Erreur lors de la récupération des enfants: $e')),
+    );
+  }
 }
 
+  // Show children in a dialog
+ void _showChildrenDialog(List<Map<String, dynamic>> children) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Enfants associés'),
+          content: children.isNotEmpty
+              ? SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: children.map((child) {
+                      String birthDateText = "Non spécifié";
+                      if (child['birthDate'] != null) {
+                        try {
+                          DateTime birthDate = (child['birthDate'] as Timestamp).toDate();
+                          birthDateText = DateFormat('dd MMMM yyyy').format(birthDate);
+                        } catch (e) {
+                          birthDateText = "Erreur de format";
+                        }
+                      }
 
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            child['imageUrl'] != null
+                                ? Image.network(
+                                    child['imageUrl']!,
+                                    height: 50,
+                                    width: 50,
+                                    fit: BoxFit.cover,
+                                  )
+                                : const Icon(Icons.person, size: 50, color: Colors.grey),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    child['name'] ?? 'Nom inconnu',
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  Text(
+                                    'Date de naiss: $birthDateText',
+                                    style: const TextStyle(color: Colors.grey),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                )
+              : const Text('Aucun enfant trouvé.'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('Fermer'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:ifoot_academy/Pages/Back-office/Backend_template.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class FriendlyMatchForm extends StatefulWidget {
@@ -29,6 +30,8 @@ class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
 
   String? _locationType;
   String? _transportMode;
+  String? _group1;
+  String? _group2;
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
   bool _isFree = false;
@@ -51,7 +54,8 @@ class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
       _childrenByGroup = {
         for (var groupDoc in groupsSnapshot.docs)
           groupDoc['name']: childrenSnapshot.docs
-              .where((childDoc) => (childDoc['assignedGroups'] as List).contains(groupDoc.id))
+              .where((childDoc) =>
+                  (childDoc['assignedGroups'] as List).contains(groupDoc.id))
               .map((childDoc) => childDoc['name'] as String)
               .toList(),
       };
@@ -60,8 +64,8 @@ class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Ajouter un match amical')),
+    return TemplatePageBack(
+      title: ('Ajouter un match amical'),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -91,15 +95,11 @@ class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
               ),
             if (_matchType == 'Contre un groupe Ifoot') ...[
               const SizedBox(height: 16),
-              _buildDropdown('Équipe 1', widget.groups),
+              _buildDropdown('Équipe 1', widget.groups, (value) => setState(() => _group1 = value)),
               const SizedBox(height: 16),
-              _buildDropdown('Équipe 2', widget.groups),
+              _buildDropdown('Équipe 2', widget.groups, (value) => setState(() => _group2 = value)),
             ],
             const SizedBox(height: 16),
-
-            _buildGroupAndChildrenSelection(),
-            const SizedBox(height: 16),
-
             DropdownButtonFormField<String>(
               value: _locationType,
               items: _locationTypes.map((location) {
@@ -189,6 +189,22 @@ class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
               maxLines: 3,
             ),
             const SizedBox(height: 16),
+            TextField(
+              controller: _feeController,
+              decoration: const InputDecoration(
+                labelText: 'Frais de participation',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.money),
+              ),
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 16),
+            SwitchListTile(
+              title: const Text('Gratuit'),
+              value: _isFree,
+              onChanged: (value) => setState(() => _isFree = value),
+            ),
+            const SizedBox(height: 16),
             ElevatedButton(
               onPressed: _saveMatch,
               child: const Text('Enregistrer'),
@@ -199,66 +215,7 @@ class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
     );
   }
 
-  Widget _buildGroupAndChildrenSelection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildMultiSelect('Groupes participants', widget.groups, _selectedGroups),
-        const SizedBox(height: 16),
-        Text('Enfants participants (${_selectedChildren.length})',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        ..._selectedGroups.map((group) {
-          final children = _childrenByGroup[group] ?? [];
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('$group (${children.length})',
-                      style: const TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w600)),
-                  IconButton(
-                    icon: const Icon(Icons.check_circle_outline),
-                    onPressed: () {
-                      setState(() {
-                        for (final child in children) {
-                          if (!_selectedChildren.contains(child)) {
-                            _selectedChildren.add(child);
-                          }
-                        }
-                      });
-                    },
-                  ),
-                ],
-              ),
-              Wrap(
-                spacing: 8,
-                children: children.map((child) {
-                  final isSelected = _selectedChildren.contains(child);
-                  return FilterChip(
-                    label: Text(child),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedChildren.add(child);
-                        } else {
-                          _selectedChildren.remove(child);
-                        }
-                      });
-                    },
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 8),
-            ],
-          );
-        }).toList(),
-      ],
-    );
-  }
+  
 
   Widget _buildMultiSelect(
       String label, List<String> items, List<String> selectedItems) {
@@ -290,15 +247,13 @@ class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
     );
   }
 
-  Widget _buildDropdown(String label, List<String> items) {
+ Widget _buildDropdown(String label, List<String> items, ValueChanged<String?> onChanged) {
     return DropdownButtonFormField<String>(
       value: null,
       items: items.map((item) {
         return DropdownMenuItem(value: item, child: Text(item));
       }).toList(),
-      onChanged: (newValue) {
-        // Logic for team selection goes here
-      },
+      onChanged: onChanged,
       decoration: InputDecoration(
         labelText: label,
         border: OutlineInputBorder(),

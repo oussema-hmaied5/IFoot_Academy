@@ -7,14 +7,13 @@ import 'package:ifoot_academy/Pages/Style/animation/splash_screen.dart';
 
 class SharedRoutes {
   static Route<dynamic>? getRoute(RouteSettings settings) {
-    print('Navigating to: ${settings.name}, with arguments: ${settings.arguments}');
     switch (settings.name) {
       case '/':
         return MaterialPageRoute(builder: (_) => const SplashScreen());
       case '/login':
         return MaterialPageRoute(builder: (_) => const LoginPage());
       case '/forget-password':
-        return MaterialPageRoute(builder: (_) => const PasswordResetPage());
+        return MaterialPageRoute(builder: (_) =>  PasswordResetPage());
       case '/register':
         return MaterialPageRoute(builder: (_) => const RegisterPage());
       case '/admin':

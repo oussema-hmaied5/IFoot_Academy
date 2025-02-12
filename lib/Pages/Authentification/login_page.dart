@@ -1,5 +1,3 @@
-// ignore_for_file: library_private_types_in_public_api, use_build_context_synchronously
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -111,21 +109,29 @@ class _LoginPageState extends State<LoginPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Image.asset('assets/Logo/logo.png', height: 220),
+                // Animation du logo
+                Hero(
+                  tag: 'logo',
+                  child: Image.asset('assets/Logo/logo.png', height: 150),
+                ),
                 const SizedBox(height: 20),
+
                 const Text(
-                  "Bienvenu á iFoot",
+                  "Bienvenue à iFoot Academy",
                   style: TextStyle(
-                    fontSize: 24,
+                    fontSize: 22,
                     fontWeight: FontWeight.bold,
                     color: Colors.blue,
                   ),
                 ),
                 const SizedBox(height: 30),
+
+                // Champ Email
                 TextFormField(
                   controller: _emailController,
                   decoration: const InputDecoration(
                     labelText: 'Email',
+                    prefixIcon: Icon(Icons.email),
                     border: OutlineInputBorder(),
                   ),
                   validator: (value) => (value == null || value.isEmpty)
@@ -133,11 +139,14 @@ class _LoginPageState extends State<LoginPage> {
                       : null,
                 ),
                 const SizedBox(height: 20),
+
+                // Champ Mot de passe
                 TextFormField(
                   controller: _passwordController,
                   obscureText: !_isPasswordVisible,
                   decoration: InputDecoration(
                     labelText: 'Mot de passe',
+                    prefixIcon: const Icon(Icons.lock),
                     border: const OutlineInputBorder(),
                     suffixIcon: IconButton(
                       icon: Icon(
@@ -157,7 +166,7 @@ class _LoginPageState extends State<LoginPage> {
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () =>
-                        Navigator.pushNamed(context, '/forgotPassword'),
+                        Navigator.pushNamed(context, '/forget-password'),
                     child: const Text(
                       "Mot de passe oublié ?",
                       style: TextStyle(color: Colors.blue),
@@ -165,6 +174,8 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
+
+                // Bouton de connexion
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
@@ -180,7 +191,8 @@ class _LoginPageState extends State<LoginPage> {
                       : const Text('Se connecter'),
                 ),
                 const SizedBox(height: 10),
-              
+
+                // Bouton Créer un compte
                 TextButton(
                   onPressed: () => Navigator.pushNamed(context, '/register'),
                   child: const Text("Créer un compte",

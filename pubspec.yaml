@@ -46,6 +46,8 @@ dependencies:
   flutter_svg: ^2.0.0
   geolocator: ^12.0.0
   fl_chart: ^0.40.0 # Try a stable, older version if the current one is not compatible.
+  cloud_functions: ^4.7.6
+  flutter_image_compress: ^2.3.0
 
 dev_dependencies:
   flutter_test:

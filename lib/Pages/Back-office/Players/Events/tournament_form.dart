@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:ifoot_academy/Pages/Back-office/Backend_template.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class TournamentForm extends StatefulWidget {
@@ -300,12 +301,11 @@ class _TournamentFormState extends State<TournamentForm> {
 
     @override
     Widget build(BuildContext context) {
-      return Scaffold(
-        appBar: AppBar(
-          title: Text(widget.tournament == null
+      return TemplatePageBack(
+          title: (widget.tournament == null
               ? 'Ajouter un tournoi'
               : 'Modifier un tournoi'),
-        ),
+        
         body: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
           child: Column(

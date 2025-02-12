@@ -24,7 +24,7 @@ class PlayerRoutes {
 
       // Events
       case '/manageEvents':
-        return MaterialPageRoute(builder: (_) => const ManageEventsPage());
+        return MaterialPageRoute(builder: (_) =>  EventManager());
 
       default:
         return null;
