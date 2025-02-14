@@ -22,16 +22,15 @@ class _ManageCoachesPageState extends State<ManageCoachesPage> {
   Widget build(BuildContext context) {
     return TemplatePageBack(
       title: 'Gestion des Coachs',
-      footerIndex: 1, // Adjust to match the correct footer index for "Coaches"
-      isCoach: true, // Ensure this is true to show the coach footer
+      footerIndex: 1,
+      isCoach: true,
       body: Column(
         children: [
-          _buildSearchBox(), // Add search box
+          _buildSearchBox(),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: _firestore.collection('coaches').snapshots(),
-              builder: (BuildContext context,
-                  AsyncSnapshot<QuerySnapshot> snapshot) {
+              builder: (BuildContext context, AsyncSnapshot<QuerySnapshot> snapshot) {
                 if (snapshot.hasError) {
                   return const Center(child: Text('Une erreur est survenue.'));
                 }
@@ -63,17 +62,28 @@ class _ManageCoachesPageState extends State<ManageCoachesPage> {
                         filteredDocuments[index].data() as Map<String, dynamic>;
 
                     return Card(
-                      margin: const EdgeInsets.symmetric(
-                          vertical: 8, horizontal: 16),
+                      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
                       child: ListTile(
+                        leading: ClipRRect(
+                          borderRadius: BorderRadius.circular(50), // Circular profile image
+                          child: coach.containsKey('imageUrl') && coach['imageUrl'] != null
+                              ? Image.network(
+                                  coach['imageUrl'],
+                                  width: 50,
+                                  height: 50,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const Icon(Icons.person, size: 50, color: Colors.grey),
+                                )
+                              : const Icon(Icons.person, size: 50, color: Colors.grey),
+                        ),
                         title: Text(coach['name'] ?? 'Nom indisponible'),
                         subtitle: Text('Email: ${coach['email']}'),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
-                              icon: const Icon(Icons.info,
-                                  color: Colors.green), // Bouton d'info
+                              icon: const Icon(Icons.info, color: Colors.green),
                               onPressed: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
@@ -96,8 +106,7 @@ class _ManageCoachesPageState extends State<ManageCoachesPage> {
                               },
                             ),
                             IconButton(
-                              icon: const Icon(Icons.delete,
-                                  color: Colors.red), // Red trash icon
+                              icon: const Icon(Icons.delete, color: Colors.red),
                               onPressed: () {
                                 _deleteCoach(filteredDocuments[index].id);
                               },

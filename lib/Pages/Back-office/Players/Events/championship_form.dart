@@ -6,17 +6,19 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:ifoot_academy/Pages/Back-office/Backend_template.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ChampionshipForm extends StatefulWidget {
   final DocumentSnapshot<Object?>? championship;
   final List<String> groups;
+  final Map<String, dynamic>? eventData;
 
-  const ChampionshipForm({Key? key, this.championship, required this.groups})
+  const ChampionshipForm(
+      {Key? key, this.championship, required this.groups, this.eventData})
       : super(key: key);
 
   @override
-  // ignore: library_private_types_in_public_api
   _ChampionshipFormState createState() => _ChampionshipFormState();
 }
 
@@ -27,6 +29,8 @@ class _ChampionshipFormState extends State<ChampionshipForm> {
   final _feeController = TextEditingController();
   final _documentsController = TextEditingController();
   final _criteriaController = TextEditingController();
+  List<String> _coaches = [];
+  bool _loadingCoaches = true;
   Uint8List? _tournamentImageBytes;
   String? _tournamentImageUrl;
   String? _locationType;
@@ -40,10 +44,45 @@ class _ChampionshipFormState extends State<ChampionshipForm> {
   @override
   void initState() {
     super.initState();
+    _fetchCoaches();
+
     if (widget.championship != null) {
       _loadChampionshipData(widget.championship!);
     }
+    if (widget.eventData != null) {
+      _preFillFormFields();
+    }
     _fetchGroupsAndChildren();
+  }
+
+  void _preFillFormFields() {
+    _nameController.text = widget.eventData!['name'] ?? '';
+    _locationType = widget.eventData!['locationType'];
+    _addressController.text = widget.eventData!['address'] ?? '';
+    _itineraryController.text = widget.eventData!['itinerary'] ?? '';
+    _feeController.text = widget.eventData!['fee'] ?? '';
+    _documentsController.text = widget.eventData!['documents'] ?? '';
+    _criteriaController.text = widget.eventData!['criteria'] ?? '';
+    _selectedGroups =
+        List<String>.from(widget.eventData!['selectedGroups'] ?? []);
+    _selectedChildren =
+        List<String>.from(widget.eventData!['selectedChildren'] ?? []);
+    _matchDays =
+        List<Map<String, dynamic>>.from(widget.eventData!['matchDays'] ?? []);
+  }
+
+  Future<void> _fetchCoaches() async {
+    try {
+      final coachesSnapshot = await _firestore.collection('coaches').get();
+      setState(() {
+        _coaches =
+            coachesSnapshot.docs.map((doc) => doc['name'] as String).toList();
+        _loadingCoaches = false;
+      });
+    } catch (e) {
+      debugPrint("Erreur lors de la récupération des coachs : $e");
+      setState(() => _loadingCoaches = false);
+    }
   }
 
   void _loadChampionshipData(DocumentSnapshot<Object?> championship) {
@@ -58,8 +97,32 @@ class _ChampionshipFormState extends State<ChampionshipForm> {
       _criteriaController.text = data['criteria'] ?? '';
       _selectedGroups = List<String>.from(data['selectedGroups'] ?? []);
       _selectedChildren = List<String>.from(data['selectedChildren'] ?? []);
-      _matchDays = List<Map<String, dynamic>>.from(data['matchDays'] ?? []);
+      _matchDays = (widget.eventData!['matchDays'] as List<dynamic>?)
+              ?.map((day) => {
+                    'day': day['day'],
+                    'date': day['date'] is String
+                        ? DateTime.tryParse(
+                            day['date']) // ✅ Converts string to DateTime safely
+                        : day['date'], // Keeps DateTime objects unchanged
+                    'time': day['time'] != null
+                        ? _convertToTimeOfDay(day['time'])
+                        : null,
+                    'transportMode': day['transportMode'],
+                    'coaches': List<String>.from(
+                        day['coaches'] ?? []), // ✅ Vérification ici
+                    'departureTime': day['departureTime'] != null
+                        ? _convertToTimeOfDay(day['departureTime'])
+                        : null,
+                    'fee': day['fee'],
+                  })
+              .toList() ??
+          [];
     });
+  }
+
+  TimeOfDay _convertToTimeOfDay(String timeString) {
+    final parts = timeString.split(':');
+    return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
   }
 
   Future<void> _fetchGroupsAndChildren() async {
@@ -76,6 +139,26 @@ class _ChampionshipFormState extends State<ChampionshipForm> {
               .toList(),
       };
     });
+  }
+
+  Future<void> _pickTime(BuildContext context, int index, String key) async {
+    TimeOfDay? pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          child: child!,
+        );
+      },
+    );
+
+    if (pickedTime != null) {
+      setState(() {
+        _matchDays[index][key] =
+            "${pickedTime.hour.toString().padLeft(2, '0')}:${pickedTime.minute.toString().padLeft(2, '0')}";
+      });
+    }
   }
 
   Future<void> _pickImage() async {
@@ -156,8 +239,23 @@ class _ChampionshipFormState extends State<ChampionshipForm> {
         'criteria': _criteriaController.text.trim(),
         'selectedGroups': _selectedGroups,
         'selectedChildren': _selectedChildren,
-        'matchDays': updatedMatchDays,
         'imageUrl': _tournamentImageUrl,
+        'matchDays': _matchDays
+            .map((day) => {
+                  'day': day['day'],
+                  'date': day['date']?.toIso8601String(),
+                  'time': day['time'] is TimeOfDay
+                      ? day['time']?.format(context)
+                      : day['time'],
+                  'transportMode': day['transportMode'],
+                  'coaches': List<String>.from(
+                      day['coaches'] ?? []), // ✅ Vérification ici
+                  'departureTime': day['departureTime'] is TimeOfDay
+                      ? day['departureTime']?.format(context)
+                      : day['departureTime'],
+                  'fee': day['fee'],
+                })
+            .toList(),
       };
 
       if (widget.championship == null) {
@@ -183,9 +281,9 @@ class _ChampionshipFormState extends State<ChampionshipForm> {
   @override
   Widget build(BuildContext context) {
     return TemplatePageBack(
-        title: (widget.championship == null
-            ? 'Ajouter un Championnat'
-            : 'Modifier un Championnat'),
+      title: (widget.championship == null
+          ? 'Ajouter un Championnat'
+          : 'Modifier un Championnat'),
       body: Column(
         children: [
           Expanded(
@@ -219,6 +317,8 @@ class _ChampionshipFormState extends State<ChampionshipForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _buildSectionHeader('Informations Générales'),
+        _buildSectionTitle('Nom du Championnat', Icons.emoji_events),
         TextField(
           controller: _nameController,
           decoration: const InputDecoration(
@@ -227,6 +327,7 @@ class _ChampionshipFormState extends State<ChampionshipForm> {
           ),
         ),
         const SizedBox(height: 16),
+        _buildSectionTitle('Lieu', Icons.place),
         DropdownButtonFormField<String>(
           value: _locationType,
           items: _locationTypes.map((type) {
@@ -242,6 +343,7 @@ class _ChampionshipFormState extends State<ChampionshipForm> {
           Column(
             children: [
               const SizedBox(height: 16),
+              _buildSectionTitle('Adresse', Icons.location_on),
               TextField(
                 controller: _addressController,
                 decoration: const InputDecoration(
@@ -277,9 +379,13 @@ class _ChampionshipFormState extends State<ChampionshipForm> {
             ],
           ),
         const SizedBox(height: 16),
+        _buildSectionHeader('Participants'),
+        _buildSectionTitle('Groupes Participants', Icons.groups),
         _buildMultiSelect('Groupes Participants',
             _childrenByGroup.keys.toList(), _selectedGroups),
         const SizedBox(height: 16),
+        _buildSectionHeader('Documents et Critères'),
+        _buildSectionTitle('Documents Requis', Icons.description),
         TextField(
           controller: _documentsController,
           decoration: const InputDecoration(
@@ -289,6 +395,7 @@ class _ChampionshipFormState extends State<ChampionshipForm> {
           maxLines: 2,
         ),
         const SizedBox(height: 16),
+        _buildSectionTitle('Critères d\'entrée', Icons.rule),
         TextField(
           controller: _criteriaController,
           decoration: const InputDecoration(
@@ -298,6 +405,8 @@ class _ChampionshipFormState extends State<ChampionshipForm> {
           maxLines: 2,
         ),
         const SizedBox(height: 16),
+        _buildSectionHeader('Photo'),
+        _buildSectionTitle('Télécharger une photo', Icons.photo),
         Row(
           children: [
             ElevatedButton(
@@ -315,7 +424,228 @@ class _ChampionshipFormState extends State<ChampionshipForm> {
                   width: 100, height: 100, fit: BoxFit.cover),
           ],
         ),
+        _buildSectionHeader('Journées du Championnat'),
+        _buildMatchDaysSection(),
       ],
+    );
+  }
+
+  Widget _buildMatchDaysSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ElevatedButton.icon(
+          onPressed: () {
+            setState(() {
+              _matchDays.add({
+                'day': 'Journée ${_matchDays.length + 1}',
+                'date': null,
+                'time': null,
+                'transportMode': null,
+                'coaches': [],
+                'departureTime': null,
+                'fee': null,
+              });
+            });
+          },
+          icon: const Icon(Icons.add, color: Colors.white),
+          label: const Text("Ajouter une Journée"),
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+        ),
+        const SizedBox(height: 10),
+        Column(
+          children: _matchDays.asMap().entries.map((entry) {
+            int index = entry.key;
+            Map<String, dynamic> day = entry.value;
+
+            return Card(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      day['day'],
+                      style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Date Picker
+                    ListTile(
+                      leading: const Icon(Icons.date_range,
+                          color: Colors.blueAccent),
+                      title: Text(day['date'] is DateTime
+                          ? "Date: ${DateFormat('dd/MM/yyyy').format(day['date'] as DateTime)}"
+                          : "Sélectionner la date"),
+                      onTap: () async {
+                        DateTime? pickedDate = await showDatePicker(
+                          context: context,
+                          initialDate: DateTime.now(),
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime(2100),
+                        );
+                        if (pickedDate != null) {
+                          setState(
+                              () => _matchDays[index]['date'] = pickedDate);
+                        }
+                      },
+                    ),
+
+                    // Time Picker (Always 24h)
+                    ListTile(
+                      leading: const Icon(Icons.access_time,
+                          color: Colors.blueAccent),
+                      title: Text(day['time'] != null
+                          ? "Heure: ${day['time']}"
+                          : "Sélectionner l'heure"),
+                      onTap: () => _pickTime(context, index, 'time'),
+                    ),
+
+                    // Transport Mode
+                    DropdownButtonFormField<String>(
+                      value: day['transportMode'],
+                      items: ['Covoiturage', 'Bus', 'Individuel'].map((mode) {
+                        return DropdownMenuItem(value: mode, child: Text(mode));
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _matchDays[index]['transportMode'] = value;
+                          if (value != 'Bus') {
+                            _matchDays[index]['departureTime'] = null;
+                            _matchDays[index]['fee'] = null;
+                          }
+                        });
+                      },
+                      decoration: const InputDecoration(
+                        labelText: "Mode de transport",
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.directions_bus,
+                            color: Colors.blueAccent),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Coach Selection
+                    _loadingCoaches
+                        ? const Center(child: CircularProgressIndicator())
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text("Coachs assignés",
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold)),
+                              Wrap(
+                                spacing: 8,
+                                children: _coaches.map((coach) {
+                                  final isSelected =
+                                      (day['coaches'] ?? []).contains(coach);
+                                  return FilterChip(
+                                    label: Text(coach),
+                                    selected: isSelected,
+                                    onSelected: (selected) {
+                                      setState(() {
+                                        if (selected) {
+                                          (_matchDays[index]['coaches'] ??= [])
+                                              .add(coach);
+                                        } else {
+                                          (_matchDays[index]['coaches'] ??= [])
+                                              .remove(coach);
+                                        }
+                                      });
+                                    },
+                                    selectedColor:
+                                        Colors.blueAccent.withOpacity(0.3),
+                                    checkmarkColor: Colors.white,
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ),
+
+                    // Bus-Specific Fields
+                    if (day['transportMode'] == 'Bus') ...[
+                      const SizedBox(height: 12),
+                      // Departure Time
+                      ListTile(
+                        leading:
+                            const Icon(Icons.schedule, color: Colors.redAccent),
+                        title: Text(day['departureTime'] != null
+                            ? "Heure de départ: ${day['departureTime']}"
+                            : "Sélectionner l'heure de départ"),
+                        onTap: () => _pickTime(context, index, 'departureTime'),
+                      ),
+
+                      // Transport Fee
+                      TextField(
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: "Frais de transport (€)",
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.euro, color: Colors.redAccent),
+                        ),
+                        onChanged: (value) {
+                          setState(() => _matchDays[index]['fee'] = value);
+                        },
+                      ),
+                    ],
+
+                    // Remove Button
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _matchDays.removeAt(index);
+                        });
+                      },
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      label: const Text("Supprimer cette Journée",
+                          style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 24, bottom: 8),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+          color: Colors.blueAccent,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.blueAccent),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
     );
   }
 

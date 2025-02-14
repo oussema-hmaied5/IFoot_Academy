@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:ifoot_academy/Pages/Back-office/Backend_template.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:intl_phone_number_input/intl_phone_number_input.dart';
 
@@ -22,15 +26,16 @@ class _AddCoachPageState extends State<AddCoachPage> {
   final TextEditingController _childrenController = TextEditingController();
   final TextEditingController _diplomaTypeController = TextEditingController();
   final TextEditingController _maxSessionsPerDayController =
-      TextEditingController(); // Max sessions per day
+      TextEditingController();
   final TextEditingController _maxSessionsPerWeekController =
-      TextEditingController(); // Max sessions per week
+      TextEditingController();
+  final ImagePicker _picker = ImagePicker();
 
   PhoneNumber _phoneNumber = PhoneNumber(isoCode: 'TN'); // Default to Tunisia
   String? _validatedPhoneNumber; // Validated phone number
   DateTime? _birthDate;
   bool _hasOtherActivity = false;
-
+  File? _image;
   String _maritalStatus = "Célibataire";
   String _financialStatus = "Bonne";
   List<String> _selectedObjectives = [];
@@ -87,6 +92,11 @@ class _AddCoachPageState extends State<AddCoachPage> {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
+
+      if (_image != null) {
+        await _uploadImage(coachId);
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Coach ajouté avec succès!')),
       );
@@ -98,6 +108,36 @@ class _AddCoachPageState extends State<AddCoachPage> {
     } finally {
       setState(() {
         _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _uploadImage(String coachId) async {
+    if (_image == null) return;
+    try {
+      final ref = FirebaseStorage.instance.ref().child('coaches/$coachId.jpg');
+      await ref.putFile(_image!);
+      String imageUrl = await ref.getDownloadURL();
+      await FirebaseFirestore.instance
+          .collection('coaches')
+          .doc(coachId)
+          .update({'imageUrl': imageUrl});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Image téléchargée avec succès!')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text('Erreur lors du téléchargement de l\'image: $e')),
+      );
+    }
+  }
+
+  Future<void> _pickImage() async {
+    final pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() {
+        _image = File(pickedFile.path);
       });
     }
   }
@@ -214,6 +254,48 @@ class _AddCoachPageState extends State<AddCoachPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Center(
+                child: Column(
+                  children: [
+                    _image != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.file(
+                              _image!,
+                              height: 150,
+                              width: 150,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        : Container(
+                            height: 150,
+                            width: 150,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.person,
+                              size: 80,
+                              color: Colors.grey,
+                            ),
+                          ),
+                    const SizedBox(height: 10),
+                    ElevatedButton.icon(
+                      onPressed: _pickImage,
+                      icon: const Icon(Icons.camera_alt),
+                      label: const Text('Sélectionner une photo'),
+                      style: ElevatedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               _buildTextField('Nom et Prénom (Coach)', _nameController),
               _buildPhoneNumberField(),
               _buildTextField('Adresse Email', _emailController),
@@ -294,9 +376,11 @@ class _AddCoachPageState extends State<AddCoachPage> {
                 (value) => setState(() => _coachLevel = value!),
               ),
               _buildTextField('Nombre de Séances Max Par Jour',
-                  _maxSessionsPerDayController, isNumeric: true),
+                  _maxSessionsPerDayController,
+                  isNumeric: true),
               _buildTextField('Nombre de Séances Max Par Semaine',
-                  _maxSessionsPerWeekController, isNumeric: true),
+                  _maxSessionsPerWeekController,
+                  isNumeric: true),
               _buildTextField('Salaire Mensuel', _salaryController,
                   isNumeric: true),
               Row(

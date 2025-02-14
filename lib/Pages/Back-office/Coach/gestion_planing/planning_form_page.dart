@@ -68,41 +68,65 @@ class _PlanningFormPageState extends State<PlanningFormPage> {
     }
   }
 
-  Future<void> _saveSession() async {
-    if (!_formKey.currentState!.validate()) return;
+ Future<void> _saveSession() async {
+  if (!_formKey.currentState!.validate()) return;
 
-    _formKey.currentState!.save();
+  _formKey.currentState!.save();
 
-    final data = {
-      'groupName': _groupName,
-      'type': _type,
-      'startTime': _startTime,
-      'endTime': _endTime,
-      'date': _date.toIso8601String(),
-      'coaches': _selectedCoaches,
-    };
+  final data = {
+    'groupName': _groupName,
+    'type': _type,
+    'startTime': _startTime,
+    'endTime': _endTime,
+    'date': _date.toIso8601String(),
+    'coaches': _selectedCoaches,
+  };
 
-    try {
-      if (widget.session == null || !widget.session!.containsKey('id')) {
-        await _firestore.collection('trainings').add(data);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Séance ajoutée avec succès !')),
-        );
-      } else {
-        final docRef =
-            _firestore.collection('trainings').doc(widget.session!['id']);
-        await docRef.update(data);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Séance mise à jour avec succès !')),
-        );
-      }
-      Navigator.pop(context);
-    } catch (e) {
+  try {
+    DocumentReference docRef;
+    if (widget.session == null || !widget.session!.containsKey('id')) {
+      docRef = await _firestore.collection('trainings').add(data);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur lors de la sauvegarde : $e')),
+        const SnackBar(content: Text('Séance ajoutée avec succès !')),
+      );
+    } else {
+      docRef = _firestore.collection('trainings').doc(widget.session!['id']);
+      await docRef.update(data);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Séance mise à jour avec succès !')),
       );
     }
+
+    // ✅ Update statistics for each assigned coach
+    for (String coachId in _selectedCoaches) {
+      final statsRef =
+          _firestore.collection('coachStatistics').doc(coachId);
+
+      final statsDoc = await statsRef.get();
+      if (statsDoc.exists) {
+        // Update existing stats
+        await statsRef.update({
+          'trainingCount': FieldValue.increment(1),
+          'lastSession': _date.toIso8601String(),
+        });
+      } else {
+        // Create new stats record
+        await statsRef.set({
+          'coachId': coachId,
+          'trainingCount': 1,
+          'lastSession': _date.toIso8601String(),
+        });
+      }
+    }
+
+    Navigator.pop(context);
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Erreur lors de la sauvegarde : $e')),
+    );
   }
+}
+
 
   Widget _buildCoachSelection() {
     return Column(
