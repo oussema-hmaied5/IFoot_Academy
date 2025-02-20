@@ -34,6 +34,140 @@ class _PlanningOverviewPageState extends State<PlanningOverviewPage> {
     _fetchWeeklyPlannings();
   }
 
+void _showCancelDialog(String trainingId) {
+  showDialog(
+    context: context,
+    builder: (context) {
+      String selectedReason = "Mauvais temps";
+      String otherReason = "";
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text("Annuler l'entraînement"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text("Choisissez une raison pour l'annulation :"),
+                DropdownButton<String>(
+                  value: selectedReason,
+                  onChanged: (value) {
+                    setState(() {
+                      selectedReason = value!;
+                      if (selectedReason != "Autre") {
+                        otherReason = "";
+                      }
+                    });
+                  },
+                  items: [
+                    "Mauvais temps",
+                    "Repos",
+                    "Manque de joueurs",
+                    "Autre",
+                  ].map((reason) {
+                    return DropdownMenuItem(
+                      value: reason,
+                      child: Text(reason),
+                    );
+                  }).toList(),
+                ),
+                if (selectedReason == "Autre")
+                  TextField(
+                    onChanged: (value) {
+                      otherReason = value;
+                    },
+                    decoration: const InputDecoration(
+                      labelText: "Description du motif",
+                      hintText: "Expliquez pourquoi l'entraînement est annulé",
+                    ),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                child: const Text("Annuler"),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  final reasonToSave =
+                      selectedReason == "Autre" ? otherReason : selectedReason;
+                  _cancelTraining(trainingId, reasonToSave);
+                  Navigator.of(context).pop();
+                },
+                child: const Text("Confirmer"),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
+Future<void> _cancelTraining(String trainingId, String reason) async {
+  try {
+    final trainingDoc =
+        await _firestore.collection('trainings').doc(trainingId).get();
+
+    if (trainingDoc.exists) {
+      final trainingData = trainingDoc.data();
+      final groupId = trainingData?['groupId'] ?? 'unknown';
+
+      await _firestore.collection('cancellations').add({
+        'trainingId': trainingId,
+        'groupName': trainingData?['groupName'] ?? 'Inconnu',
+        'date': trainingData?['date'] ?? DateTime.now().toIso8601String(),
+        'startTime': trainingData?['startTime'] ?? 'Non spécifié',
+        'endTime': trainingData?['endTime'] ?? 'Non spécifié',
+        'coaches': trainingData?['coaches'] ?? [],
+        'reason': reason,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      // ✅ Delete the training session
+      await _firestore.collection('trainings').doc(trainingId).delete();
+
+      // ✅ Send notification
+      await _sendNotificationToUsers(groupId, reason);
+
+      // ✅ Refresh UI
+      _fetchWeeklyPlannings();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Séance annulée et enregistrée !")),
+      );
+    }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Erreur lors de l'annulation : $e")),
+    );
+  }
+}
+
+
+
+Future<void> _sendNotificationToUsers(String groupId, String reason) async {
+  try {
+    await _firestore.collection('notifications').add({
+      'groupId': groupId,
+      'message': "L'entraînement du groupe a été annulé. Motif: $reason",
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Notification envoyée aux utilisateurs !")),
+    );
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Erreur envoi de notification : $e")),
+    );
+  }
+}
+
+
+
   Future<void> _fetchWeeklyPlannings() async {
   try {
     final snapshot = await _firestore.collection('trainings').get();
@@ -199,18 +333,30 @@ Future<String> _fetchGroupType(String groupId) async {
                 ),
             ],
           ),
-          trailing: IconButton(
-            icon: const Icon(Icons.edit, color: Colors.orange),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => PlanningFormPage(session: planning),
-                ),
-              ).then((_) => _fetchWeeklyPlannings());
-            },
+          trailing: Row(
+  mainAxisSize: MainAxisSize.min,
+  children: [
+    IconButton(
+      icon: const Icon(Icons.edit, color: Color.fromARGB(255, 43, 37, 37)),
+      onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PlanningFormPage(session: planning),
           ),
+        ).then((_) => _fetchWeeklyPlannings());
+      },
+    ),
+    IconButton(
+      icon: const Icon(Icons.cancel, color: Colors.red),
+      onPressed: () => _showCancelDialog(planning['id']),
+    ),
+  ],
+),
+
+          
         ),
+        
       );
     },
   );
@@ -233,6 +379,7 @@ Future<String> _fetchGroupType(String groupId) async {
             ).then((_) => _fetchWeeklyPlannings()); // Rafraîchir après ajout
           },
         ),
+        
       ],
       body: Column(
         children: [

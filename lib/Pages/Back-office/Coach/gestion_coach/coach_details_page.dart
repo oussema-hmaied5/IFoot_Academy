@@ -86,7 +86,7 @@ class _CoachDetailsPageState extends State<CoachDetailsPage> {
                     coach['maritalStatus'] ?? 'Non spécifiée'),
                 _buildDetailRow(
                     'Nombre d’Enfants',
-                    coach['children']?.toString() ?? 'Non spécifié'),
+                    coach['children']?.toString() ?? 'Aucun enfant'),
               ]),
               _buildDetailsSection('Informations Professionnelles', [
                 _buildDetailRow(
@@ -118,6 +118,8 @@ class _CoachDetailsPageState extends State<CoachDetailsPage> {
       ),
     );
   }
+
+  
 
    Widget _buildDetailsSection(String title, List<Widget> details) {
     return Card(
@@ -559,18 +561,23 @@ class _CoachDetailsPageState extends State<CoachDetailsPage> {
     );
   }
 
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        children: [
-          Expanded(
-              flex: 3,
-              child: Text('$label:',
-                  style: const TextStyle(fontWeight: FontWeight.bold))),
-          Expanded(flex: 3, child: Text(value)),
-        ],
-      ),
-    );
-  }
+Widget _buildDetailRow(String label, String value) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4.0),
+    child: Row(
+      children: [
+        Expanded(
+            flex: 5,
+            child: Text(
+              '$label:',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            )),
+        Expanded(
+          flex: 5,
+          child: Text(value),
+        ),
+      ],
+    ),
+  );
+}
 }
