@@ -1,3 +1,5 @@
+// ignore_for_file: library_private_types_in_public_api
+
 import 'package:flutter/material.dart';
 
 class Footer extends StatefulWidget {
@@ -8,7 +10,8 @@ class Footer extends StatefulWidget {
       : super(key: key);
 
   @override
-  _FooterState createState() => _FooterState();
+  
+   createState() => _FooterState();
 }
 
 class _FooterState extends State<Footer> {

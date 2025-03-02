@@ -13,7 +13,7 @@ class SharedRoutes {
       case '/login':
         return MaterialPageRoute(builder: (_) => const LoginPage());
       case '/forget-password':
-        return MaterialPageRoute(builder: (_) =>  PasswordResetPage());
+        return MaterialPageRoute(builder: (_) =>  const PasswordResetPage());
       case '/register':
         return MaterialPageRoute(builder: (_) => const RegisterPage());
       case '/admin':

@@ -1,9 +1,11 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:ifoot_academy/Pages/Back-office/Backend_template.dart';
+import 'package:ifoot_academy/Pages/Back-office/backend_template.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
@@ -13,6 +15,7 @@ class EditCoachPage extends StatefulWidget {
   const EditCoachPage({Key? key, required this.coachId}) : super(key: key);
 
   @override
+  // ignore: library_private_types_in_public_api
   _EditCoachPageState createState() => _EditCoachPageState();
 }
 
@@ -38,7 +41,6 @@ class _EditCoachPageState extends State<EditCoachPage> {
   String? _diploma;
   String? _coachLevel;
   List<String> _selectedObjectives = [];
-  bool _isLoading = false;
 
   @override
   void initState() {
@@ -58,7 +60,7 @@ class _EditCoachPageState extends State<EditCoachPage> {
         _birthDate = data['birthDate'] != null
             ? (data['birthDate'] as Timestamp).toDate()
             : null;
-        _imageUrl = data['imageUrl'] ?? null;
+        _imageUrl = data['imageUrl'];
         _maritalStatus = data['maritalStatus'] ?? '';
         _childrenController.text = (data['children'] ?? '').toString();
         _financialStatus = data['financialStatus'] ?? '';
@@ -76,7 +78,6 @@ class _EditCoachPageState extends State<EditCoachPage> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
-      _isLoading = true;
     });
 
     try {
@@ -113,7 +114,6 @@ class _EditCoachPageState extends State<EditCoachPage> {
       );
     } finally {
       setState(() {
-        _isLoading = false;
       });
     }
   }

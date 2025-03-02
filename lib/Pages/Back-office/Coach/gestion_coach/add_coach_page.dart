@@ -1,10 +1,12 @@
+// ignore_for_file: library_private_types_in_public_api, use_build_context_synchronously
+
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:ifoot_academy/Pages/Back-office/Backend_template.dart';
+import 'package:ifoot_academy/Pages/Back-office/backend_template.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:intl_phone_number_input/intl_phone_number_input.dart';
@@ -38,7 +40,7 @@ class _AddCoachPageState extends State<AddCoachPage> {
   File? _image;
   String _maritalStatus = "Célibataire";
   String _financialStatus = "Bonne";
-  List<String> _selectedObjectives = [];
+  final List<String> _selectedObjectives = [];
   String _diploma = "Non";
   String _coachLevel = "Niveau 1";
   bool _isLoading = false;

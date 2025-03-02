@@ -3,7 +3,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-import '../../Backend_template.dart';
+import '../../backend_template.dart';
 
 class AddGroupPage extends StatefulWidget {
   const AddGroupPage({Key? key}) : super(key: key);

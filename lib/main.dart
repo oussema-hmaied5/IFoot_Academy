@@ -28,9 +28,7 @@ void main() async {
     appleProvider: AppleProvider.appAttest,
   );
 
-  FirebaseApp app = Firebase.app();
-  print("🔥 Firebase initialized: ${app.name}");
-  print("📦 Firebase Storage Bucket: ${app.options.storageBucket}");
+  Firebase.app();
 
   await initializeDateFormatting('fr_FR', null);
 

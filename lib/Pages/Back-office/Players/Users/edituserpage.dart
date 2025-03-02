@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
-import '../../Backend_template.dart';
+import '../../backend_template.dart';
 
 class EditUserPage extends StatefulWidget {
   final String userId;
@@ -28,7 +28,6 @@ class _EditUserPageState extends State<EditUserPage> {
   late TextEditingController _emailController;
   late TextEditingController _nameController;
   late TextEditingController _mobileController;
-  DateTime? _selectedDateOfBirth;
   List<Map<String, dynamic>> _children = [];
   bool _isLoading = false;
 
@@ -66,9 +65,6 @@ class _EditUserPageState extends State<EditUserPage> {
         _emailController.text = userData['email'] ?? '';
         _nameController.text = userData['name'] ?? '';
         _mobileController.text = userData['phone'] ?? '';
-        _selectedDateOfBirth = userData['dateOfBirth'] != null
-            ? (userData['dateOfBirth'] as Timestamp).toDate()
-            : null;
 
         _children = childrenSnapshot.docs.map((doc) {
           final data = doc.data();

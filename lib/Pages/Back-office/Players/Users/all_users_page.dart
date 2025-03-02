@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart'; // Import for date formatting
 
-import '../../Backend_template.dart';
+import '../../backend_template.dart';
 import 'edituserpage.dart';
 
 class ManageUsersPage extends StatefulWidget {

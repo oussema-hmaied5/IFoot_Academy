@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:ifoot_academy/Pages/Back-office/Backend_template.dart';
+import 'package:ifoot_academy/Pages/Back-office/backend_template.dart';
 
 class SwitchingSplash extends StatelessWidget {
   final String switchingTo;

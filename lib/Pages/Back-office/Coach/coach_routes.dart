@@ -10,7 +10,7 @@ import 'gestion_planing/planning_stats_page.dart';
 
 class CoachRoutes {
   static Route<dynamic>? getRoute(RouteSettings settings) {
-    print('CoachRoutes: Checking route ${settings.name}'); // Debugging
+    // Debugging
 
     switch (settings.name) {
       case '/AllCoaches':
@@ -26,7 +26,6 @@ class CoachRoutes {
             builder: (_) => EditCoachPage(coachId: coachId),
           );
         }
-        print('Invalid arguments for /editCoach');
         return null;
 
       case '/CoachPlanning':
@@ -36,7 +35,6 @@ class CoachRoutes {
             builder: (_) => CoachPlanningPage(coachId: coachId),
           );
         }
-        print('Invalid arguments for /CoachPlanning');
         return null;
 
       case '/PlanningForm':
@@ -46,7 +44,6 @@ class CoachRoutes {
             builder: (_) => PlanningFormPage(session: session),
           );
         }
-        print('Invalid arguments for /PlanningForm');
         return null;
 
       case '/PlanningOverview':
@@ -56,7 +53,6 @@ class CoachRoutes {
         return MaterialPageRoute(builder: (_) => const PlanningStatsPage());
 
       default:
-        print('Route not found in CoachRoutes: ${settings.name}');
         return null; // Allow fallback in other routes
     }
   }

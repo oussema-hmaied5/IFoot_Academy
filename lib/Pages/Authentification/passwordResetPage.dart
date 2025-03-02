@@ -1,8 +1,13 @@
+// ignore: file_names
+// ignore_for_file: file_names, duplicate_ignore, library_private_types_in_public_api
+
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 class PasswordResetPage extends StatefulWidget {
+  const PasswordResetPage({super.key});
+
   @override
   _PasswordResetPageState createState() => _PasswordResetPageState();
 }
@@ -105,6 +110,7 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
         });
 
         await Future.delayed(const Duration(seconds: 2));
+        // ignore: use_build_context_synchronously
         Navigator.pushReplacementNamed(context, '/login');
       } else {
         _message = "User session expired. Please log in again.";

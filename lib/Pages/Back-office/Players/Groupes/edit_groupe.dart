@@ -1,11 +1,9 @@
 // ignore_for_file: library_private_types_in_public_api, use_build_context_synchronously
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:ifoot_academy/Pages/Back-office/Backend_template.dart';
+import 'package:ifoot_academy/Pages/Back-office/backend_template.dart';
 import 'package:ifoot_academy/models/group.dart';
-import 'package:image_picker/image_picker.dart';
 
 class EditGroupPage extends StatefulWidget {
   final Group group;
@@ -18,8 +16,6 @@ class EditGroupPage extends StatefulWidget {
 
 class _EditGroupPageState extends State<EditGroupPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
-  final ImagePicker _imagePicker = ImagePicker();
 
   final TextEditingController _groupNameController = TextEditingController();
   final List<String> _selectedChildren = [];

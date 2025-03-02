@@ -1,6 +1,8 @@
+// ignore_for_file: library_private_types_in_public_api, unused_element, use_build_context_synchronously
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:ifoot_academy/Pages/Back-office/Backend_template.dart';
+import 'package:ifoot_academy/Pages/Back-office/backend_template.dart';
 import 'package:intl/intl.dart';
 
 class PlanningFormPage extends StatefulWidget {
@@ -17,14 +19,14 @@ class _PlanningFormPageState extends State<PlanningFormPage> {
   final _formKey = GlobalKey<FormState>();
 
   late String _groupName;
-  late String _type;
   late String _startTime;
   late String _endTime;
+    final _dateController = TextEditingController();
+
   late DateTime _date;
   List<Map<String, dynamic>> _coaches = [];
   List<String> _selectedCoaches = [];
-  Map<String, int> _coachLimits = {}; // Max sessions per coach
-  Map<String, int> _coachCurrentSessions = {}; // Current session count
+  final Map<String, int> _coachCurrentSessions = {}; // Current session count
 
   @override
   void initState() {
@@ -38,137 +40,195 @@ class _PlanningFormPageState extends State<PlanningFormPage> {
     _selectedCoaches = List<String>.from(widget.session?['coaches'] ?? []);
 
     _fetchCoaches().then((_) {
+       _fetchCoachSessionCountsForDate(_date); // ✅ Appel immédiat avec _date
+
       setState(() {});
     });
   }
 
-  Future<void> _fetchCoaches() async {
-    try {
-      final snapshot = await _firestore.collection('coaches').get();
-      final allCoaches = snapshot.docs
-          .map((doc) => {
-                'id': doc.id,
-                'name': doc.data()['name'],
-                'maxSessions': doc.data().containsKey('maxSessionsPerDay')
-                    ? doc.data()['maxSessionsPerDay']
-                    : 2, // Default value
-                'currentSessions': 0, // Placeholder, will be updated
-              })
-          .toList();
+  /// ✅ **Fetch all coaches and their session counts**
+Future<void> _fetchCoaches() async {
+    final snapshot = await _firestore.collection('coaches').get();
+    final allCoaches = snapshot.docs.map((doc) => {
+      'id': doc.id,
+      'name': doc.data()['name'],
+      'maxSessionsPerDay': doc.data().containsKey('maxSessionsPerDay') ? doc.data()['maxSessionsPerDay'] : 2,
+      'maxSessionsPerWeek': doc.data().containsKey('maxSessionsPerWeek') ? doc.data()['maxSessionsPerWeek'] : 10,
+      'dailySessions': 0,
+      'weeklySessions': 0,
+    }).toList();
 
-      setState(() {
-        _coaches = allCoaches;
+    setState(() {
+      _coaches = allCoaches;
+    });
 
-        if (widget.session != null && widget.session!['coaches'] != null) {
-          final sessionCoaches = List<String>.from(widget.session!['coaches']);
-          _selectedCoaches = sessionCoaches
-              .map((coachInfo) {
-                final coach = _coaches.firstWhere(
-                  (c) => c['id'] == coachInfo || c['name'] == coachInfo,
-                  orElse: () => {'id': null},
-                );
-                return coach['id'];
-              })
-              .whereType<String>()
-              .toList();
-        }
-      });
-
-      // ✅ Now fetch session counts and update coaches
-      await _fetchCoachSessionCounts();
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Erreur lors de la récupération des coaches : $e')),
-      );
+    // ✅ Charger les séances en fonction de la date actuelle (ou date sélectionnée)
+    if (_dateController.text.isNotEmpty) {
+      DateTime selectedDate = DateFormat('dd/MM/yyyy').parse(_dateController.text);
+      await _fetchCoachSessionCountsForDate(selectedDate);
     }
-  }
+  
+}
 
-  Future<void> _fetchCoachSessionCounts() async {
-    try {
-      DateTime startOfWeek = _date.subtract(Duration(days: _date.weekday - 1));
-      DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
 
-      final snapshot = await _firestore.collection('trainings').get();
-      Map<String, int> coachSessions = {};
+Future<void> _fetchCoachSessionCountsForDate(DateTime selectedDate) async {
+  // ✅ Déterminer la semaine (du lundi au dimanche)
+  DateTime startOfWeek = selectedDate.subtract(Duration(days: selectedDate.weekday - 1));
+  DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
 
-      for (var doc in snapshot.docs) {
-        if (!doc.exists || doc.data().isEmpty) continue;
+  Map<String, int> dailySessions = {};
+  Map<String, int> weeklySessions = {};
 
-        // ✅ Check if the 'coaches' field exists before using it
-        if (doc.data().containsKey('coaches') && doc['coaches'] is List) {
-          List<dynamic> assignedCoaches = doc['coaches'];
+  // ✅ Liste des collections à vérifier
+  List<String> collections = ['trainings', 'championships', 'friendlyMatches', 'tournaments'];
 
-          for (var coachId in assignedCoaches) {
-            if (coachId != null) {
-              coachSessions[coachId] = (coachSessions[coachId] ?? 0) + 1;
-            }
+  for (String collection in collections) {
+    final snapshot = await _firestore.collection(collection).get();
+
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      if (!data.containsKey('coaches')) continue;
+
+      List<dynamic> assignedCoaches = data['coaches'];
+
+      DateTime sessionDate = DateTime.now();
+      if (data.containsKey('date')) {
+        // ✅ Convertir la date correctement
+        if (data['date'] is Timestamp) {
+          sessionDate = (data['date'] as Timestamp).toDate();
+        } else if (data['date'] is String) {
+          try {
+            sessionDate = DateTime.parse(data['date']);
+          } catch (e) {
+            continue;
           }
         } else {
-          print(
-              "⚠️ WARNING: Document ${doc.id} does NOT have 'coaches' field!");
+          continue;
         }
-      }
-
-      // ✅ If editing a session, subtract the current session
-      if (widget.session != null && widget.session!.containsKey('coaches')) {
-        for (String coachId in widget.session!['coaches']) {
-          if (coachSessions.containsKey(coachId) &&
-              coachSessions[coachId]! > 0) {
-            coachSessions[coachId] = (coachSessions[coachId] ?? 1) - 1;
+      } else if (collection == "championships" && data.containsKey('matchDays')) {
+        // ✅ Extraire les dates des matchs dans un championnat
+        for (var matchDay in data['matchDays']) {
+          if (matchDay is Map<String, dynamic> && matchDay.containsKey('date')) {
+            try {
+              sessionDate = DateTime.parse(matchDay['date']);
+            } catch (e) {
+              continue;
+            }
+          } else {
+            continue;
           }
         }
+      } else {
+        continue;
       }
 
-      setState(() {
-        _coachCurrentSessions = coachSessions;
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur récupération des sessions: $e')),
-      );
+      for (var coachId in assignedCoaches) {
+        if (coachId == null) continue;
+
+        // ✅ Vérifier si la session est aujourd'hui
+        if (sessionDate.isAtSameMomentAs(selectedDate)) {
+          dailySessions[coachId] = (dailySessions[coachId] ?? 0) + 1;
+        }
+
+        // ✅ Vérifier si la session est cette semaine (entre lundi et dimanche)
+        if (sessionDate.isAfter(startOfWeek) && sessionDate.isBefore(endOfWeek.add(const Duration(days: 1)))) {
+          weeklySessions[coachId] = (weeklySessions[coachId] ?? 0) + 1;
+        }
+      }
     }
   }
 
-  void _showCoachLimitWarning(List<Map<String, dynamic>> blockedCoaches) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text("Limite atteinte !"),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                  "Les coaches suivants ont atteint leur limite de séances :"),
-              const SizedBox(height: 10),
-              ...blockedCoaches.map((coach) => Text(
-                    "⚠️ ${coach['name']}: ${coach['todaySessions']}/${coach['maxPerDay']} aujourd'hui, "
-                    "${coach['weekSessions']}/${coach['maxPerWeek']} cette semaine",
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  )),
-              const SizedBox(height: 16),
-              const Text("Voulez-vous quand même les affecter ?"),
-            ],
+  // ✅ Mettre à jour les coachs avec les sessions comptées
+  setState(() {
+    for (var coach in _coaches) {
+      String coachId = coach['id'];
+      coach['dailySessions'] = dailySessions[coachId] ?? 0;
+      coach['weeklySessions'] = weeklySessions[coachId] ?? 0;
+    }
+  });
+}
+
+
+
+/// ✅ **UI for selecting available coaches with session count**
+Widget _buildCoachSelection() {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text("Coachs disponibles", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+      const SizedBox(height: 10),
+      Wrap(
+        spacing: 8.0,
+        runSpacing: 4.0,
+        children: _coaches.map((coach) {
+          final isSelected = _selectedCoaches.contains(coach['id']);
+          final maxPerDay = coach['maxSessionsPerDay'];
+          final maxPerWeek = coach['maxSessionsPerWeek'];
+          final dailySessions = coach['dailySessions'];
+          final weeklySessions = coach['weeklySessions'];
+
+          final remainingDaily = maxPerDay - dailySessions;
+          final remainingWeekly = maxPerWeek - weeklySessions;
+
+          return ChoiceChip(
+            label: Text("${coach['name']} 📅$remainingDaily/$maxPerDay 🗓️$remainingWeekly/$maxPerWeek"),
+            selected: isSelected,
+            selectedColor: Colors.blueAccent,
+            backgroundColor: Colors.grey[200],
+            onSelected: (bool selected) {
+              setState(() {
+                if (selected) {
+                  _selectedCoaches.add(coach['id']);
+                } else {
+                  _selectedCoaches.remove(coach['id']);
+                }
+              });
+            },
+          );
+        }).toList(),
+      ),
+    ],
+  );
+}
+
+
+  /// ✅ **Show warning when coach limit is reached**
+ /// ✅ **Show warning when coach limit is reached**
+void _showLimitWarning(Map<String, dynamic> coach) {
+  showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: const Text("⚠️ Limite atteinte"),
+        content: Text(
+            "Le coach ${coach['name']} a déjà atteint ${coach['currentSessions']} sessions.\n\n"
+            "Voulez-vous l'assigner quand même ?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Annuler"),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Annuler"),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _saveSessionToFirestore(_selectedCoaches);
-              },
-              child: const Text("Forcer l'affectation"),
-            ),
-          ],
-        );
-      },
-    );
-  }
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _selectedCoaches.add(coach['id']);
+
+                // ✅ Incrémenter manuellement les sessions affichées
+                int index = _coaches.indexWhere((c) => c['id'] == coach['id']);
+                if (index != -1) {
+                  _coaches[index]['currentSessions'] += 1;
+                }
+              });
+
+              Navigator.pop(context);
+            },
+            child: const Text("Forcer l'affectation", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      );
+    },
+  );
+}
 
   Future<void> _saveSessionToFirestore(List<String> allowedCoaches) async {
     final data = {
@@ -221,50 +281,7 @@ class _PlanningFormPageState extends State<PlanningFormPage> {
     }
   }
 
-  Widget _buildCoachSelection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          "Coachs disponibles",
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 8.0,
-          runSpacing: 4.0,
-          children: _coaches.map((coach) {
-            final isSelected = _selectedCoaches.contains(coach['id']);
-            final sessionCount = _coachCurrentSessions[coach['id']] ?? 0;
-
-            return ChoiceChip(
-              label: Text(
-                  "${coach['name']} ($sessionCount/${coach['maxSessions']})"),
-              selected: isSelected,
-              selectedColor: Colors.blueAccent,
-              backgroundColor: Colors.grey[200],
-              onSelected: (bool selected) {
-                setState(() {
-                  if (selected) {
-                    _selectedCoaches.add(coach['id']);
-                    _coachCurrentSessions[coach['id']] =
-                        (_coachCurrentSessions[coach['id']] ?? 0) + 1;
-                  } else {
-                    _selectedCoaches.remove(coach['id']);
-                    _coachCurrentSessions[coach['id']] =
-                        (_coachCurrentSessions[coach['id']] ?? 0) > 0
-                            ? _coachCurrentSessions[coach['id']]! - 1
-                            : 0;
-                  }
-                });
-              },
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
+ 
 Widget _buildTimePicker({
   required String label,
   required String selectedTime,
@@ -381,7 +398,10 @@ Widget _buildGroupNameField() {
                   if (selectedDate != null) {
                     setState(() {
                       _date = selectedDate;
+
                     });
+                          await _fetchCoachSessionCountsForDate(selectedDate);
+
                   }
                 },
               ),
@@ -422,6 +442,57 @@ Widget _buildGroupNameField() {
       ),
     );
   }
+
+ void _showCoachLimitWarning(List<Map<String, dynamic>> blockedCoaches) {
+  showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: const Text("⚠️ Limite de séances atteinte"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              "Certains coachs ont atteint leur limite de séances. Voulez-vous continuer ?",
+              style: TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: blockedCoaches.map((coach) {
+                return Text(
+                  "🛑 ${coach['name']} (Séances aujourd'hui: ${coach['todaySessions']}/${coach['maxPerDay']} | Cette semaine: ${coach['weekSessions']}/${coach['maxPerWeek']})",
+                  style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context), // ❌ Cancel
+            child: const Text("Annuler"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              _proceedWithAssignment(); // ✅ Continue assigning coach
+            },
+            child: const Text("Forcer l'affectation"),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+
+void _proceedWithAssignment() {
+  // ✅ Continue saving or assigning coaches despite the limits
+  _saveSession(); // Or your function to save the assignment
+}
+
+
 
 
   
@@ -504,11 +575,9 @@ Widget _buildGroupNameField() {
       }
 
       // ✅ Save the session
-      DocumentReference docRef;
       if (widget.session == null ||
           (widget.session?.containsKey('id') ?? false) == false) {
         // If session doesn't exist, create a new one
-        docRef = await _firestore.collection('trainings').add(data);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Séance ajoutée avec succès !')),
         );

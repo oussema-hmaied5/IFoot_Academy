@@ -1,5 +1,7 @@
+// ignore_for_file: library_private_types_in_public_api
+
 import 'package:flutter/material.dart';
-import 'package:ifoot_academy/Pages/Back-office/Backend_template.dart';
+import 'package:ifoot_academy/Pages/Back-office/backend_template.dart';
 
 import '../../Style/animation/switching_splash.dart';
 
@@ -20,6 +22,7 @@ class _AdminMainPageState extends State<AdminMainPage> {
     currentView = (args != null && args['isCoach'] == true) ? 'coach' : 'player';
   }
 
+  // ignore: unused_element
   void _switchView(String targetView) {
   Navigator.of(context).push(
     MaterialPageRoute(

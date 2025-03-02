@@ -1,21 +1,23 @@
+// ignore_for_file: depend_on_referenced_packages, empty_catches
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:ifoot_academy/Pages/Back-office/Backend_template.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:ifoot_academy/Pages/Back-office/backend_template.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'package:intl/intl.dart';
-// ignore: depend_on_referenced_packages
 import 'package:table_calendar/table_calendar.dart';
 
 class TrainingCalendarPage extends StatefulWidget {
   const TrainingCalendarPage({Key? key}) : super(key: key);
 
   @override
+  // ignore: library_private_types_in_public_api
   _TrainingCalendarState createState() => _TrainingCalendarState();
 }
 
 class _TrainingCalendarState extends State<TrainingCalendarPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  late Map<DateTime, List<Map<String, dynamic>>> _trainings;
+  Map<DateTime, List<Map<String, dynamic>>> _events = {};
   DateTime _selectedDay = DateTime.now();
 
   Future<void> _initializeLocale() async {
@@ -25,47 +27,136 @@ class _TrainingCalendarState extends State<TrainingCalendarPage> {
   @override
   void initState() {
     super.initState();
-    _trainings = {};
-    _fetchTrainings();
+    _events = {};
+    _fetchEvents();
   }
 
-  Future<void> _fetchTrainings() async {
-    final snapshot = await _firestore.collection('trainings').get();
+  Future<void> _fetchEvents() async {
     final events = <DateTime, List<Map<String, dynamic>>>{};
+    
+    await _fetchTrainings(events);
+    await _fetchMatches(events);
+    await _fetchTournaments(events);
+    await _fetchChampionships(events);
+    await _fetchFriendlyMatches(events);
+    
+    setState(() {
+      _events = events;
+    });
+  }
 
+  Future<void> _fetchTournaments(Map<DateTime, List<Map<String, dynamic>>> events) async {
+    final snapshot = await _firestore.collection('tournaments').get();
     for (var doc in snapshot.docs) {
       final data = doc.data();
-      if (data.containsKey('date')) {
-        final date = DateTime.parse(data['date']).toLocal();
-        final localDate = DateTime(date.year, date.month, date.day);
-
-        if (!events.containsKey(localDate)) {
-          events[localDate] = [];
-        }
-
-        List<String> coachNames = [];
-        if (data['coaches'] != null && data['coaches'] is List) {
-          for (String coachId in List<String>.from(data['coaches'])) {
-            final coachDoc =
-                await _firestore.collection('coaches').doc(coachId).get();
-            if (coachDoc.exists) {
-              coachNames.add(coachDoc.data()!['name']);
-            }
-          }
-        }
+      if (data.containsKey('dates') && data['dates'] is List && data['dates'].isNotEmpty) {
+        final localDate = (data['dates'][0] as Timestamp).toDate();
+        events.putIfAbsent(localDate, () => []);
         events[localDate]!.add({
           'id': doc.id,
-          'groupName': data['groupName'],
-          'startTime': data['startTime'],
-          'endTime': data['endTime'],
-          'coaches': coachNames.isEmpty ? ["Aucun coach assigné"] : coachNames,
+          'type': 'Tournoi',
+          'name': data['name'],
+          'date': data['dates'] ?? 'Heure non définie',
+          'location': data['locationType'],
         });
       }
     }
+  }
 
-    setState(() {
-      _trainings = events;
-    });
+  Future<void> _fetchMatches(Map<DateTime, List<Map<String, dynamic>>> events) async {
+    final snapshot = await _firestore.collection('matches').get();
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      if (data.containsKey('date')) {
+        final localDate = DateTime.parse(data['date']).toLocal();
+        events.putIfAbsent(localDate, () => []);
+        events[localDate]!.add({
+          'id': doc.id,
+          'type': 'Match Amical',
+          'team1': data['team1'],
+          'team2': data['team2'],
+          'time': data['time'],
+        });
+      }
+    }
+  }
+
+  Future<void> _fetchChampionships(Map<DateTime, List<Map<String, dynamic>>> events) async {
+    final snapshot = await _firestore.collection('championships').get();
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      if (data.containsKey('matchDays') && data['matchDays'] is List) {
+        for (var matchDay in data['matchDays']) {
+          if (matchDay is Map<String, dynamic> && matchDay.containsKey('date')) {
+            try {
+              final localDate = DateTime.parse(matchDay['date']);
+              events.putIfAbsent(localDate, () => []);
+              events[localDate]!.add({
+                'id': doc.id,
+                'type': 'Championnat',
+                'name': data['name'] ?? 'Match Inconnu',
+                'time': matchDay['time'] ?? 'Heure non définie',
+                'transportMode': matchDay['transportMode'] ?? 'Non précisé',
+                'location': data['locationType'] ?? 'Lieu inconnu',
+              });
+            } catch (e) {
+            }
+          }
+        }
+      }
+    }
+  }
+
+  Future<void> _fetchTrainings(Map<DateTime, List<Map<String, dynamic>>> events) async {
+    final snapshot = await _firestore.collection('trainings').get();
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      if (data.containsKey('date')) {
+        final localDate = DateTime.parse(data['date']).toLocal();
+        events.putIfAbsent(localDate, () => []);
+        events[localDate]!.add({
+          'id': doc.id,
+          'type': 'Entraînement',
+          'groupName': data['groupName'],
+          'startTime': data['startTime'],
+          'endTime': data['endTime'],
+          'coaches': data['coaches'] ?? ['Aucun coach'],
+        });
+      }
+    }
+  }
+
+  Future<void> _fetchFriendlyMatches(Map<DateTime, List<Map<String, dynamic>>> events) async {
+    final snapshot = await _firestore.collection('friendlyMatches').get();
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      if (data.containsKey('date')) {
+        final localDate = DateTime.parse(data['date']).toLocal();
+        events.putIfAbsent(localDate, () => []);
+        events[localDate]!.add({
+          'id': doc.id,
+          'type': 'Match Amical',
+          'team1': data['team1'],
+          'team2': data['team2'],
+          'time': data['time'],
+        });
+      }
+    }
+  }
+
+  Icon _getEventIcon(String type) {
+    switch (type) {
+      case 'Entraînement':
+        return const Icon(FontAwesomeIcons.futbol, color: Colors.orange);
+      case 'Match Amical':
+        return const Icon(FontAwesomeIcons.futbol, color: Colors.blue);
+      case 'Tournoi':
+        return const Icon(FontAwesomeIcons.medal, color: Color.fromARGB(255, 194, 15, 131));
+      case 'Championnat':
+        return const Icon(FontAwesomeIcons.trophy, color: Colors.red);
+      default:
+        return const Icon(Icons.event, color: Colors.blueAccent);
+    }
   }
 
   @override
@@ -76,12 +167,7 @@ class _TrainingCalendarState extends State<TrainingCalendarPage> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         } else if (snapshot.hasError) {
-          return Center(
-            child: Text(
-              'Erreur lors de l\'initialisation : ${snapshot.error}',
-              style: const TextStyle(color: Colors.red),
-            ),
-          );
+          return Center(child: Text('Erreur: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
         } else {
           return _buildPageContent();
         }
@@ -91,185 +177,99 @@ class _TrainingCalendarState extends State<TrainingCalendarPage> {
 
   Widget _buildPageContent() {
     return TemplatePageBack(
-      title: 'Calendrier des Entraînements',
+      title: 'Calendrier des Événements',
       footerIndex: 0,
       body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TableCalendar(
+            calendarStyle:const CalendarStyle(
+              selectedDecoration: BoxDecoration(
+                color: Colors.blueAccent,
+                shape: BoxShape.circle,
+              ),
+              todayDecoration: BoxDecoration(
+                color: Colors.orangeAccent,
+                shape: BoxShape.circle,
+              ),
+              markersMaxCount: 1,
+              markerDecoration: BoxDecoration(
+                color: Colors.redAccent,
+                shape: BoxShape.circle,
+              ),
+            ),
+            headerStyle: const HeaderStyle(
+              formatButtonVisible: false,
+              titleCentered: true,
+              titleTextStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              leftChevronIcon: Icon(Icons.chevron_left, color: Colors.blueAccent),
+              rightChevronIcon: Icon(Icons.chevron_right, color: Colors.blueAccent),
+            ),
             locale: 'fr_FR',
             firstDay: DateTime(DateTime.now().year, 1, 1),
             lastDay: DateTime(DateTime.now().year, 12, 31),
             focusedDay: _selectedDay,
             calendarFormat: CalendarFormat.month,
-            availableCalendarFormats: const {CalendarFormat.month: 'Month'},
-            selectedDayPredicate: (day) => isSameDay(day, _selectedDay),
-            eventLoader: (day) => _getTrainingsForDay(day),
+            availableCalendarFormats: const {CalendarFormat.month: 'Mois'}, 
+            eventLoader: (day) => _events[DateTime(day.year, day.month, day.day)] ?? [],
             onDaySelected: (selectedDay, focusedDay) {
-              setState(() {
-                _selectedDay = selectedDay;
-              });
+              setState(() => _selectedDay = selectedDay);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Jour sélectionné: ${selectedDay.day}/${selectedDay.month}/${selectedDay.year}'),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+              setState(() => _selectedDay = selectedDay);
             },
-            calendarStyle: const CalendarStyle(
-              markerDecoration: BoxDecoration(
-                color: Colors.blue,
-                shape: BoxShape.circle,
-              ),
-              selectedDecoration: BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-              ),
-              todayDecoration: BoxDecoration(
-                color: Colors.orange,
-                shape: BoxShape.circle,
-              ),
-            ),
           ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Text(
-              'Les entraînements planifiés pour le\n${DateFormat('EEEE, d MMMM y', 'fr_FR').format(_selectedDay)} :',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.blueAccent,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: _buildTrainingList(),
-          ),
+          Expanded(child: _buildEventList()),
         ],
       ),
     );
   }
 
-  List<Map<String, dynamic>> _getTrainingsForDay(DateTime day) {
-    final trainings = _trainings[DateTime(day.year, day.month, day.day)] ?? [];
-    return trainings;
+  Widget _buildEventList() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Text(
+            'Date sélectionnée : ${_selectedDay.day}/${_selectedDay.month}/${_selectedDay.year}',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueAccent),
+          ),
+        ),
+        Expanded(child: _buildEventListContent()),
+      ],
+    );
   }
 
-  Widget _buildTrainingList() {
-    final trainings = _getTrainingsForDay(_selectedDay);
-
-    if (trainings.isEmpty) {
+  Widget _buildEventListContent() {
+    final events = _events[DateTime(_selectedDay.year, _selectedDay.month, _selectedDay.day)] ?? [];
+    
+    if (events.isEmpty) {
       return const Center(
         child: Text(
-          'Aucun entraînement prévu pour cette date.',
-          style: TextStyle(
-            fontSize: 18,
-            fontStyle: FontStyle.italic,
-            color: Colors.grey,
-          ),
+          'Aucun événement prévu.',
+          style: TextStyle(fontSize: 18, fontStyle: FontStyle.italic, color: Colors.grey),
         ),
       );
     }
 
-    return ListView.builder(
-      itemCount: trainings.length,
+    return ListView.separated(
+      separatorBuilder: (context, index) => Divider(color: Colors.grey.shade400),
+      itemCount: events.length,
       itemBuilder: (context, index) {
-        final training = trainings[index];
-        final coaches =
-            (training['coaches'] != null && training['coaches'] is List)
-                ? (training['coaches'] as List).join(', ')
-                : 'Aucun coach assigné';
+        final event = events[index];
         return Card(
-          margin: const EdgeInsets.symmetric(vertical: 8),
           child: ListTile(
-            leading: const Icon(Icons.sports_soccer, color: Colors.blueAccent),
-            title: Text(
-              training['groupName'],
-              style: const TextStyle(fontWeight: FontWeight.bold),
+            leading: CircleAvatar(
+              backgroundColor: Colors.grey.shade200,
+              child: _getEventIcon(event['type']),
             ),
-            subtitle: Text(
-              'De ${training['startTime']} à ${training['endTime']}\nCoach(s) : $coaches',
-              style: const TextStyle(color: Colors.grey),
-            ),
-            trailing: IconButton(
-              icon: const Icon(Icons.cancel, color: Colors.red),
-              onPressed: () => _showCancelDialog(training['id']),
-            ),
+            title: Text('${event['type']}: ${event['groupName'] ?? event['match'] ?? event['name'] ?? ''}'),
+            subtitle: Text(event['time'] ?? event['startTime'] ?? event['endTime'] ?? event['location'] ?? ''),
+           
           ),
-        );
-      },
-    );
-  }
-
-  Future<void> _cancelTraining(String trainingId, String reason) async {
-    await _firestore.collection('trainings').doc(trainingId).delete();
-    _fetchTrainings();
-  }
-
-  void _showCancelDialog(String trainingId) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        String selectedReason = "Mauvais temps";
-        String otherReason = "";
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text("Annuler l'entraînement"),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text("Choisissez une raison pour l'annulation :"),
-                  DropdownButton<String>(
-                    value: selectedReason,
-                    onChanged: (value) {
-                      setState(() {
-                        selectedReason = value!;
-                        if (selectedReason != "Autre") {
-                          otherReason = "";
-                        }
-                      });
-                    },
-                    items: [
-                      "Mauvais temps",
-                      "Repos",
-                      "Autre",
-                    ].map((reason) {
-                      return DropdownMenuItem(
-                        value: reason,
-                        child: Text(reason),
-                      );
-                    }).toList(),
-                  ),
-                  if (selectedReason == "Autre")
-                    TextField(
-                      onChanged: (value) {
-                        otherReason = value;
-                      },
-                      decoration: const InputDecoration(
-                        labelText: "Description du motif",
-                        hintText:
-                            "Expliquez pourquoi l'entraînement est annulé",
-                      ),
-                    ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text("Annuler"),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    final reasonToSave = selectedReason == "Autre"
-                        ? otherReason
-                        : selectedReason;
-                    _cancelTraining(trainingId, reasonToSave);
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text("Confirmer"),
-                ),
-              ],
-            );
-          },
         );
       },
     );

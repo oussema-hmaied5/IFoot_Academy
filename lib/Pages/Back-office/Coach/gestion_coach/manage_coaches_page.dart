@@ -1,7 +1,9 @@
+// ignore_for_file: library_private_types_in_public_api, sort_child_properties_last, use_build_context_synchronously
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-import '../../Backend_template.dart';
+import '../../backend_template.dart';
 import 'add_coach_page.dart';
 import 'coach_details_page.dart';
 import 'edit_coach_page.dart';

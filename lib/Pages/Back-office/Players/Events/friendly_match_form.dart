@@ -2,9 +2,8 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:ifoot_academy/Pages/Back-office/Backend_template.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:ifoot_academy/Pages/Back-office/backend_template.dart';
+import 'package:intl/intl.dart';
 
 class FriendlyMatchForm extends StatefulWidget {
   final List<String> groups;
@@ -21,86 +20,292 @@ class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
   final _matchNameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _itineraryController = TextEditingController();
+  final _dateController =
+      TextEditingController(); // Controller for the date field
   final _addressController = TextEditingController();
   final _tenueController = TextEditingController();
   final _feeController = TextEditingController();
-
+  final Map<String, TextEditingController> _uniformControllers = {};
+  final _firestore = FirebaseFirestore.instance;
+  final List<String> _matchTypes = [
+    'Contre une académie',
+    'Contre un groupe Ifoot'
+  ];
   String? _matchType;
   List<String> _selectedGroups = [];
   List<String> _selectedChildren = [];
   List<DateTime> _matchDates = [];
-
-  final _firestore = FirebaseFirestore.instance;
-  Map<String, List<String>> _childrenByGroup = {};
-
   String? _locationType;
   bool _loadingGroups = true;
   List<String> _availableGroups = [];
   String? _transportMode;
   String? _group1;
   String? _group2;
+  List<Map<String, dynamic>> _coaches = []; // Stores coaches with session count
+  List<String> _selectedCoaches = []; // Selected coaches
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
   bool _isFree = false;
-
-  final List<String> _matchTypes = [
-    'Contre une académie',
-    'Contre un groupe Ifoot'
-  ];
-  final List<String> _locationTypes = ['Ifoot', 'Extérieur'];
-  final List<String> _transportModes = ['Covoiturage', 'Bus', 'Individuel'];
+  Map<String, String> _groupUniforms = {};
 
   @override
   void initState() {
     super.initState();
     _fetchGroupsAndChildren();
     _fetchGroups();
-
+    _fetchCoaches(); // ✅ Fetch coaches and their session limits
     if (widget.eventData != null) {
       _preFillFormFields();
     }
   }
 
+
+   /// ✅ **Fetch all coaches and their session counts**
+  Future<void> _fetchCoaches() async {
+  
+      final snapshot = await _firestore.collection('coaches').get();
+      final allCoaches = snapshot.docs
+          .map((doc) => {
+                'id': doc.id,
+                'name': doc.data()['name'],
+                'maxSessionsPerDay': doc.data().containsKey('maxSessionsPerDay')
+                    ? doc.data()['maxSessionsPerDay']
+                    : 2,
+                'maxSessionsPerWeek':
+                    doc.data().containsKey('maxSessionsPerWeek')
+                        ? doc.data()['maxSessionsPerWeek']
+                        : 10,
+                'dailySessions': 0,
+                'weeklySessions': 0,
+              })
+          .toList();
+
+      setState(() {
+        _coaches = allCoaches;
+      });
+
+      // ✅ Charger les séances en fonction de la date actuelle (ou date sélectionnée)
+      if (_dateController.text.isNotEmpty) {
+        DateTime selectedDate =
+            DateFormat('dd/MM/yyyy').parse(_dateController.text);
+        await _fetchCoachSessionCountsForDate(selectedDate);
+      }
+    
+  }
+
+  Future<void> _fetchCoachSessionCountsForDate(DateTime selectedDate) async {
+    // ✅ Déterminer la semaine (du lundi au dimanche)
+    DateTime startOfWeek =
+        selectedDate.subtract(Duration(days: selectedDate.weekday - 1));
+    DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
+
+    Map<String, int> dailySessions = {};
+    Map<String, int> weeklySessions = {};
+
+    // ✅ Liste des collections à vérifier
+    List<String> collections = [
+      'trainings',
+      'championships',
+      'friendlyMatches',
+      'tournaments'
+    ];
+
+    for (String collection in collections) {
+      final snapshot = await _firestore.collection(collection).get();
+
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        if (!data.containsKey('coaches')) continue;
+
+        List<dynamic> assignedCoaches = data['coaches'];
+
+        DateTime sessionDate = DateTime.now();
+        if (data.containsKey('date')) {
+          // ✅ Convertir la date correctement
+          if (data['date'] is Timestamp) {
+            sessionDate = (data['date'] as Timestamp).toDate();
+          } else if (data['date'] is String) {
+            try {
+              sessionDate = DateTime.parse(data['date']);
+            } catch (e) {
+              continue;
+            }
+          } else {
+            continue;
+          }
+        } else if (collection == "championships" &&
+            data.containsKey('matchDays')) {
+          // ✅ Extraire les dates des matchs dans un championnat
+          for (var matchDay in data['matchDays']) {
+            if (matchDay is Map<String, dynamic> &&
+                matchDay.containsKey('date')) {
+              try {
+                sessionDate = DateTime.parse(matchDay['date']);
+              } catch (e) {
+                continue;
+              }
+            } else {
+              continue;
+            }
+          }
+        } else {
+          continue;
+        }
+
+        for (var coachId in assignedCoaches) {
+          if (coachId == null) continue;
+
+          // ✅ Vérifier si la session est aujourd'hui
+          if (sessionDate.isAtSameMomentAs(selectedDate)) {
+            dailySessions[coachId] = (dailySessions[coachId] ?? 0) + 1;
+          }
+
+          // ✅ Vérifier si la session est cette semaine (entre lundi et dimanche)
+          if (sessionDate.isAfter(startOfWeek) &&
+              sessionDate.isBefore(endOfWeek.add(const Duration(days: 1)))) {
+            weeklySessions[coachId] = (weeklySessions[coachId] ?? 0) + 1;
+          }
+        }
+      }
+    }
+
+    // ✅ Mettre à jour les coachs avec les sessions comptées
+    setState(() {
+      for (var coach in _coaches) {
+        String coachId = coach['id'];
+        coach['dailySessions'] = dailySessions[coachId] ?? 0;
+        coach['weeklySessions'] = weeklySessions[coachId] ?? 0;
+      }
+    });
+  }
+
+  /// ✅ **UI for selecting available coaches with session count**
+  Widget _buildCoachSelection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text("Coachs disponibles",
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8.0,
+          runSpacing: 4.0,
+          children: _coaches.map((coach) {
+            final isSelected = _selectedCoaches.contains(coach['id']);
+            final maxPerDay = coach['maxSessionsPerDay'];
+            final maxPerWeek = coach['maxSessionsPerWeek'];
+            final dailySessions = coach['dailySessions'];
+            final weeklySessions = coach['weeklySessions'];
+            final remainingDaily = maxPerDay - dailySessions;
+            final remainingWeekly = maxPerWeek - weeklySessions;
+
+            return ChoiceChip(
+              label: Text(
+                  "${coach['name']} 📅$remainingDaily/$maxPerDay 🗓️$remainingWeekly/$maxPerWeek"),
+              selected: isSelected,
+              selectedColor: Colors.blueAccent,
+              backgroundColor: Colors.grey[200],
+              onSelected: (bool selected) {
+                setState(() {
+                  if (selected) {
+                    _selectedCoaches.add(coach['id']);
+                  } else {
+                    _selectedCoaches.remove(coach['id']);
+                  }
+                });
+              },
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+
   void _preFillFormFields() {
-    _matchNameController.text = widget.eventData!['matchName'] ?? '';
-    _descriptionController.text = widget.eventData!['description'] ?? '';
-    _locationType = widget.eventData!['locationType'];
-    _addressController.text = widget.eventData!['address'] ?? '';
-    _itineraryController.text = widget.eventData!['itinerary'] ?? '';
-    _feeController.text = widget.eventData!['fee'] ?? '';
-    _tenueController.text = widget.eventData!['tenue'] ?? '';
-    _matchDates = (widget.eventData!['dates'] as List<dynamic>)
-        .map((timestamp) => (timestamp as Timestamp).toDate())
-        .toList();
-    _selectedGroups =
-        List<String>.from(widget.eventData!['selectedGroups'] ?? []);
-    _selectedChildren =
-        List<String>.from(widget.eventData!['selectedChildren'] ?? []);
-    _transportMode = widget.eventData!['transportMode'];
-    _isFree = widget.eventData!['fee'] == 'Gratuit';
+    if (widget.eventData == null) return;
+
+    setState(() {
+      _matchType = widget.eventData!.containsKey('matchType')
+          ? widget.eventData!['matchType']
+          : null;
+      _matchNameController.text = widget.eventData!.containsKey('matchName')
+          ? widget.eventData!['matchName'] ?? ''
+          : '';
+      _descriptionController.text = widget.eventData!.containsKey('description')
+          ? widget.eventData!['description'] ?? ''
+          : '';
+      _locationType = widget.eventData!.containsKey('locationType')
+          ? widget.eventData!['locationType']
+          : null;
+      _addressController.text = widget.eventData!.containsKey('address')
+          ? widget.eventData!['address'] ?? ''
+          : '';
+      _itineraryController.text = widget.eventData!.containsKey('itinerary')
+          ? widget.eventData!['itinerary'] ?? ''
+          : '';
+      _feeController.text = widget.eventData!.containsKey('fee')
+          ? widget.eventData!['fee'] ?? ''
+          : '';
+      _tenueController.text = widget.eventData!.containsKey('tenue')
+          ? widget.eventData!['tenue'] ?? ''
+          : '';
+
+
+      _selectedGroups = widget.eventData!.containsKey('selectedGroups') &&
+              widget.eventData!['selectedGroups'] is List
+          ? List<String>.from(widget.eventData!['selectedGroups'])
+          : [];
+
+      _selectedChildren = widget.eventData!.containsKey('selectedChildren') &&
+              widget.eventData!['selectedChildren'] is List
+          ? List<String>.from(widget.eventData!['selectedChildren'])
+          : [];
+
+      _transportMode = widget.eventData!.containsKey('transportMode')
+          ? widget.eventData!['transportMode']
+          : null;
+      _isFree = widget.eventData!.containsKey('fee') &&
+          widget.eventData!['fee'] == 'Gratuit';
+
+      // ✅ Récupérer les équipes si "Contre un groupe Ifoot"
+      if (_matchType == 'Contre un groupe Ifoot' &&
+          _selectedGroups.length >= 2) {
+        _group1 = _selectedGroups[0];
+        _group2 = _selectedGroups[1];
+      }
+
+      // ✅ Récupérer les tenues et initialiser les TextEditingController
+      if (_matchType == 'Contre un groupe Ifoot' &&
+          widget.eventData!.containsKey('uniforms') &&
+          widget.eventData!['uniforms'] is Map<String, dynamic>) {
+        Map<String, dynamic> uniforms = widget.eventData!['uniforms'];
+
+        // 🔹 Correction : Assurer la conversion correcte des tenues et initialiser les contrôleurs
+        uniforms.forEach((group, tenue) {
+          if (!_uniformControllers.containsKey(group)) {
+            _uniformControllers[group] = TextEditingController();
+          }
+          _uniformControllers[group]!.text = tenue.toString();
+        });
+      }
+    });
   }
 
   Future<void> _fetchGroupsAndChildren() async {
-    final groupsSnapshot = await _firestore.collection('groups').get();
-    final childrenSnapshot = await _firestore.collection('children').get();
+    setState(() {});
+  }
 
-    setState(() {
-      _childrenByGroup = {
-        for (var groupDoc in groupsSnapshot.docs)
-          groupDoc['name']: childrenSnapshot.docs
-              .where((childDoc) =>
-                  (childDoc['assignedGroups'] as List).contains(groupDoc.id))
-              .map((childDoc) => childDoc['name'] as String)
-              .toList(),
-      };
-    });
+  void _updateDateController(DateTime date) {
+    _dateController.text = "${date.day}/${date.month}/${date.year}";
   }
 
   Future<void> _fetchGroups() async {
     try {
       final groupsSnapshot = await _firestore.collection('groups').get();
       setState(() {
-        _availableGroups = groupsSnapshot.docs.map((doc) => doc['name'] as String).toList();
+        _availableGroups =
+            groupsSnapshot.docs.map((doc) => doc['name'] as String).toList();
         _loadingGroups = false;
       });
     } catch (e) {
@@ -108,306 +313,312 @@ class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
     }
   }
 
-@override
-Widget build(BuildContext context) {
-  return TemplatePageBack(
-    title: 'Ajouter un match amical',
-    footerIndex: 3,
+  @override
+  Widget build(BuildContext context) {
+    List<String> availableForTeam1 =
+        _availableGroups.where((group) => group != _group2).toList();
+    List<String> availableForTeam2 =
+        _availableGroups.where((group) => group != _group1).toList();
 
-    body: SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        children: [
-          _buildSectionTitle('Type de match', Icons.sports_soccer),
-          DropdownButtonFormField<String>(
-            value: _matchType,
-            items: _matchTypes.map((type) {
-              return DropdownMenuItem(value: type, child: Text(type));
-            }).toList(),
-            onChanged: (value) {
-              setState(() {
-                _matchType = value;
-                if (_matchType == 'Contre un groupe Ifoot') {
-                  _locationType = 'Ifoot'; // Set default location
-                } else {
-                  _locationType = null; // Allow user selection for other match types
-                }
-              });
-            },
-            decoration: const InputDecoration(
-              labelText: 'Type de match',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.sports_soccer),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // 🔹 IF "Contre une académie", show input for academy name
-          if (_matchType == 'Contre une académie')
-            TextField(
-              controller: _matchNameController,
+    return TemplatePageBack(
+      title: 'Ajouter un match amical',
+      footerIndex: 3,
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            _buildSectionTitle('Type de match', Icons.sports_soccer),
+            DropdownButtonFormField<String>(
+              value: _matchType,
+              items: _matchTypes.map((type) {
+                return DropdownMenuItem(value: type, child: Text(type));
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  _matchType = value;
+                  if (_matchType == 'Contre un groupe Ifoot') {
+                    _locationType = 'Ifoot'; // Set default location
+                  } else {
+                    _locationType =
+                        null; // Allow user selection for other types
+                  }
+                });
+              },
               decoration: const InputDecoration(
-                labelText: 'Nom de l\'académie',
+                labelText: 'Type de match',
                 border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.school),
+                prefixIcon: Icon(Icons.sports_soccer),
               ),
             ),
+            const SizedBox(height: 16),
 
-          // 🔹 IF "Contre un groupe Ifoot", show Équipe selection
-          if (_matchType == 'Contre un groupe Ifoot') ...[
-            const SizedBox(height: 16),
-            _loadingGroups
-                ? const Center(child: CircularProgressIndicator())
-                : _buildDropdown('Équipe 1', _availableGroups, _group1, (value) {
-                    setState(() {
-                      _group1 = value;
-                      debugPrint("Équipe 1 sélectionnée: $_group1");
-                    });
-                  }),
-            const SizedBox(height: 16),
-            _loadingGroups
-                ? const Center(child: CircularProgressIndicator())
-                : _buildDropdown('Équipe 2', _availableGroups, _group2, (value) {
-                    setState(() {
-                      _group2 = value;
-                      debugPrint("Équipe 2 sélectionnée: $_group2");
-                    });
-                  }),
-          ],
+            // 🔹 Match Name for "Contre une académie"
+            if (_matchType == 'Contre une académie')
+              TextField(
+                controller: _matchNameController,
+                decoration: const InputDecoration(
+                  labelText: 'Nom de l\'académie',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.school),
+                ),
+              ),
 
-          // 🔹 IF "Contre une académie", allow group & player selection
-          if (_matchType == 'Contre une académie') ...[
-            const SizedBox(height: 16),
-            _buildSectionTitle('Sélection des groupes', Icons.groups),
-            _loadingGroups
-                ? const Center(child: CircularProgressIndicator())
-                : _buildMultiSelect(
-                    'Sélectionnez les groupes',
-                    _availableGroups,
-                    _selectedGroups,
+            // 🔹 Team Selection for "Contre un groupe Ifoot"
+            if (_matchType == 'Contre un groupe Ifoot') ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSectionTitle('Équipe 1', Icons.group),
+                        _loadingGroups
+                            ? const Center(child: CircularProgressIndicator())
+                            : _buildDropdown(
+                                'Équipe 1', availableForTeam1, _group1,
+                                (value) {
+                                setState(() {
+                                  _group1 = value;
+                                  if (_group1 == _group2) {
+                                    _group2 = null;
+                                  }
+                                });
+                              }),
+                        if (_group1 != null) _buildUniformInput(_group1!),
+                      ],
+                    ),
                   ),
-
-            const SizedBox(height: 16),
-
-            _buildSectionTitle('Sélection des joueurs', Icons.person),
-            for (String group in _selectedGroups)
-              _buildMultiSelect(
-                'Joueurs du groupe $group',
-                _childrenByGroup[group] ?? [],
-                _selectedChildren,
+                  const SizedBox(width: 16), // Space between sections
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSectionTitle('Équipe 2', Icons.group),
+                        _loadingGroups
+                            ? const Center(child: CircularProgressIndicator())
+                            : _buildDropdown(
+                                'Équipe 2', availableForTeam2, _group2,
+                                (value) {
+                                setState(() {
+                                  _group2 = value;
+                                  if (_group2 == _group1) {
+                                    _group1 = null;
+                                  }
+                                });
+                              }),
+                        if (_group2 != null) _buildUniformInput(_group2!),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-          ],
+            ],
 
-          const SizedBox(height: 16),
-          _buildSectionTitle('Lieu', Icons.place),
-          DropdownButtonFormField<String>(
-            value: _locationType,
-            items: _locationTypes.map((location) {
-              return DropdownMenuItem(value: location, child: Text(location));
-            }).toList(),
-            onChanged: _matchType == 'Contre un groupe Ifoot' ? null : (value) => setState(() => _locationType = value),
-            decoration: const InputDecoration(
-              labelText: 'Lieu',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.place),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          if (_locationType == 'Extérieur') ...[
+            // 🔹 Match Date Selection (Single Date Picker)
             const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSectionTitle('Date du match', Icons.date_range),
+                      TextFormField(
+                        readOnly: true,
+                        controller: _dateController,
+                        decoration: InputDecoration(
+                          labelText: 'Sélectionner une date',
+                          border: const OutlineInputBorder(),
+                          prefixIcon: const Icon(Icons.calendar_today,
+                              color: Colors.blue),
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.event, color: Colors.green),
+                            onPressed: _pickDate,
+                          ),
+                        ),
+                        onTap: _pickDate,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            // 🔹 Match Time Selection (Start & End Time in a Row)
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSectionTitle('Début du match', Icons.access_time),
+                      TextFormField(
+                        readOnly: true,
+                        controller: TextEditingController(
+                          text: _startTime != null
+                              ? _formatTime24(_startTime!)
+                              : '',
+                        ),
+                        decoration: InputDecoration(
+                          labelText: 'Sélectionner une heure',
+                          border: const OutlineInputBorder(),
+                          prefixIcon:
+                              const Icon(Icons.schedule, color: Colors.blue),
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.access_time,
+                                color: Colors.green),
+                            onPressed: _pickStartTime,
+                          ),
+                        ),
+                        onTap: _pickStartTime,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16), // Space between fields
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSectionTitle('Fin du match', Icons.access_time),
+                      TextFormField(
+                        readOnly: true,
+                        controller: TextEditingController(
+                          text:
+                              _endTime != null ? _formatTime24(_endTime!) : '',
+                        ),
+                        decoration: InputDecoration(
+                          labelText: 'Sélectionner une heure',
+                          border: const OutlineInputBorder(),
+                          prefixIcon:
+                              const Icon(Icons.schedule, color: Colors.blue),
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.access_time,
+                                color: Colors.red),
+                            onPressed: _pickEndTime,
+                          ),
+                        ),
+                        onTap: _pickEndTime,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+            _buildSectionTitle('Description', Icons.description),
             TextField(
-              controller: _addressController,
+              controller: _descriptionController,
               decoration: const InputDecoration(
-                labelText: 'Adresse',
+                labelText: 'Description',
                 border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.location_on),
+                prefixIcon: Icon(Icons.description),
               ),
+              maxLines: 3,
             ),
-            const SizedBox(height: 8),
+
+            const SizedBox(height: 16),
+            _buildSectionTitle('Frais de participation', Icons.money),
             Row(
               children: [
                 Expanded(
                   child: TextField(
-                    controller: _itineraryController,
-                    readOnly: true,
+                    controller: _feeController,
+                    enabled: !_isFree,
                     decoration: const InputDecoration(
-                      labelText: 'Itinéraire',
+                      labelText: 'Tarif (en TND)',
                       border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.money),
                     ),
+                    keyboardType: TextInputType.number,
                   ),
                 ),
                 const SizedBox(width: 8),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8.0),
-                    ),
-                  ),
-                  onPressed: _selectItinerary,
-                  child: const Text('Choisir sur la carte'),
+                Checkbox(
+                  value: _isFree,
+                  onChanged: (value) {
+                    setState(() {
+                      _isFree = value!;
+                      if (_isFree) {
+                        _feeController.clear();
+                      }
+                    });
+                  },
                 ),
+                const Text('Gratuit', style: TextStyle(fontSize: 16)),
               ],
-              
             ),
-            
-          _buildSectionTitle('Mode de transport', Icons.directions_car),
-          DropdownButtonFormField<String>(
-            value: _transportMode,
-            items: _transportModes.map((mode) {
-              return DropdownMenuItem(value: mode, child: Text(mode));
-            }).toList(),
-            onChanged: (value) => setState(() => _transportMode = value),
-            decoration: const InputDecoration(
-              labelText: 'Mode de transport',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.directions_car),
+            const SizedBox(height: 16),
+            _buildSectionTitle('Selection des coaches ', Icons.person),
+
+            _buildCoachSelection(),
+            const SizedBox(height: 16),
+           
+            ElevatedButton.icon(
+              onPressed: _saveMatch,
+              icon: const Icon(Icons.save),
+              label: const Text('Enregistrer'),
             ),
-          ),
           ],
-
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildSectionTitle('Date du match', Icons.date_range),
-                    ElevatedButton(
-                      onPressed: _pickDate,
-                      child: const Text('Choisir la date'),
-                    ),
-                    Wrap(
-                      spacing: 8,
-                      children: _matchDates
-                          .map((date) => Chip(
-                                label: Text('${date.day}/${date.month}'),
-                                onDeleted: () => setState(() => _matchDates.remove(date)),
-                              ))
-                          .toList(),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildSectionTitle('Heure du match', Icons.access_time),
-                    ElevatedButton(
-                      onPressed: _pickStartTime,
-                      child: Text(_startTime != null
-                          ? 'Début: ${_startTime!.format(context)}'
-                          : 'Choisir heure début'),
-                    ),
-                    const SizedBox(height: 8),
-                    ElevatedButton(
-                      onPressed: _pickEndTime,
-                      child: Text(_endTime != null
-                          ? 'Fin: ${_endTime!.format(context)}'
-                          : 'Choisir heure fin'),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-          _buildSectionTitle('Tenue', Icons.checkroom),
-          TextField(
-            controller: _tenueController,
-            decoration: const InputDecoration(
-              labelText: 'Tenue',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.checkroom),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-          _buildSectionTitle('Description', Icons.description),
-          TextField(
-            controller: _descriptionController,
-            decoration: const InputDecoration(
-              labelText: 'Description',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.description),
-            ),
-            maxLines: 3,
-          ),
-
-          const SizedBox(height: 16),
-          _buildSectionTitle('Frais de participation', Icons.money),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _feeController,
-                  enabled: !_isFree,
-                  decoration: const InputDecoration(
-                    labelText: 'Tarif (en €)',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.euro),
-                  ),
-                  keyboardType: TextInputType.number,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Checkbox(
-                value: _isFree,
-                onChanged: (value) {
-                  setState(() {
-                    _isFree = value!;
-                    if (_isFree) {
-                      _feeController.clear();
-                    }
-                  });
-                },
-              ),
-              const Text('Gratuit', style: TextStyle(fontSize: 16)),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: _saveMatch,
-            icon: const Icon(Icons.save),
-            label: const Text('Enregistrer'),
-          ),
-        ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Future<void> _pickStartTime() async {
-  final pickedTime = await showTimePicker(
-    context: context,
-    initialTime: TimeOfDay.now(),
-  );
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
 
-  if (pickedTime != null) {
-    setState(() {
-      _startTime = pickedTime;
-    });
+    if (pickedTime != null) {
+      setState(() {
+        _startTime = pickedTime;
+        _endTime = null; // Reset end time when start time is changed
+      });
+    }
   }
-}
 
-Future<void> _pickEndTime() async {
-  final pickedTime = await showTimePicker(
-    context: context,
-    initialTime: TimeOfDay.now(),
-  );
+  Future<void> _pickEndTime() async {
+    if (_startTime == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Veuillez d\'abord sélectionner l\'heure de début!'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
-  if (pickedTime != null) {
-    setState(() {
-      _endTime = pickedTime;
-    });
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: _startTime ?? TimeOfDay.now(), // Default to start time
+    );
+
+    if (pickedTime != null) {
+      int startMinutes = (_startTime!.hour * 60) + _startTime!.minute;
+      int endMinutes = (pickedTime.hour * 60) + pickedTime.minute;
+
+      if (endMinutes <= startMinutes) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('L\'heure de fin doit être après l\'heure de début!'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      setState(() {
+        _endTime = pickedTime;
+      });
+    }
   }
-}
 
+  String _formatTime24(TimeOfDay time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
 
   Widget _buildSectionTitle(String title, IconData icon) {
     return Padding(
@@ -423,58 +634,6 @@ Future<void> _pickEndTime() async {
         ],
       ),
     );
-  }
-
-  Widget _buildMultiSelect(
-      String label, List<String> items, List<String> selectedItems) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        Wrap(
-          spacing: 8,
-          children: items.map((item) {
-            final isSelected = selectedItems.contains(item);
-            return FilterChip(
-              label: Text(item),
-              selected: isSelected,
-              onSelected: (selected) {
-                setState(() {
-                  if (selected) {
-                    selectedItems.add(item);
-                  } else {
-                    selectedItems.remove(item);
-                  }
-                });
-              },
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-   Future<void> _selectItinerary() async {
-    try {
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-      final mapsUrl =
-          'https://www.google.com/maps?q=${position.latitude},${position.longitude}';
-
-      if (await canLaunch(mapsUrl)) {
-        await launch(mapsUrl);
-        _itineraryController.text =
-            '${position.latitude}, ${position.longitude}';
-      } else {
-        throw 'Could not open the map.';
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur lors de la localisation : $e')),
-      );
-    }
   }
 
   Widget _buildDropdown(String label, List<String> items, String? selectedValue,
@@ -494,88 +653,148 @@ Future<void> _pickEndTime() async {
   }
 
   Future<void> _pickDate() async {
-    final pickedDate = await showDatePicker(
+    final DateTime? pickedDate = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
+      initialDate: _matchDates.isNotEmpty ? _matchDates.first : DateTime.now(),
       firstDate: DateTime.now(),
       lastDate: DateTime(2100),
     );
 
     if (pickedDate != null) {
-      setState(() => _matchDates.add(pickedDate));
+      setState(() {
+        _matchDates = [pickedDate]; // ✅ Stocke uniquement UNE date
+        _updateDateController(pickedDate); // ✅ Met à jour le champ de texte
+      });
     }
   }
 
+  Widget _buildUniformInput(String group) {
+    // Si le contrôleur n'existe pas encore, on l'initialise
+    if (!_uniformControllers.containsKey(group)) {
+      _uniformControllers[group] = TextEditingController();
+    }
 
-
-Future<void> _saveMatch() async {
-
-  // ✅ **Fix: If the match type is "Contre un groupe Ifoot", store Équipe 1 and Équipe 2 in `_selectedGroups`**
-  if (_matchType == 'Contre un groupe Ifoot') {
-    _selectedGroups = [];
-    if (_group1 != null) _selectedGroups.add(_group1!);
-    if (_group2 != null) _selectedGroups.add(_group2!);
-  }
-
-
-  // ✅ **Ensure required fields are filled based on match type**
-  if (_matchType == null ||
-      _descriptionController.text.trim().isEmpty ||
-      _locationType == null ||
-      _matchDates.isEmpty ||
-      _selectedGroups.isEmpty || // 🔹 Groups must be selected
-      (_matchType == 'Contre une académie' && _matchNameController.text.trim().isEmpty) || // 🔹 Match Name required only for "Contre une académie"
-      (_matchType == 'Contre une académie' && _selectedChildren.isEmpty) || // 🔹 Children required only for "Contre une académie"
-      (_locationType == 'Extérieur' && _addressController.text.trim().isEmpty) || // 🔹 Address required only if "Extérieur"
-      (_isFree == false && _feeController.text.trim().isEmpty) || // 🔹 Fee required if not free
-      (_transportMode == 'Bus' && _startTime == null)) { // 🔹 Departure time required if transport is "Bus"
-      
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Veuillez remplir tous les champs obligatoires.')),
-    );
-    return;
-  }
-
-  // 🔹 **Set fee to "0" if match is free**
-  final matchFee = _isFree ? '0' : _feeController.text.trim();
-
-  // 🔹 **Prepare match data for Firestore**
-  final matchData = {
-    'matchType': _matchType,
-    'description': _descriptionController.text.trim(),
-    'locationType': _locationType,
-    'fee': matchFee,
-    'tenue': _tenueController.text.trim(),
-    'dates': _matchDates.map((date) => Timestamp.fromDate(date)).toList(),
-    'selectedGroups': _selectedGroups,
-    'selectedChildren': _matchType == 'Contre une académie' ? _selectedChildren : [], // 🔹 Save only if required
-    'transportMode': _locationType == 'Ifoot' ? null : _transportMode, // 🔹 Remove transportMode if match is in "Ifoot"
-    'startTime': _startTime?.format(context),
-    'endTime': _endTime?.format(context),
-  };
-
-  // 🔹 **Add match name only if it's "Contre une académie"**
-  if (_matchType == 'Contre une académie') {
-    matchData['matchName'] = _matchNameController.text.trim();
-  }
-
-  // 🔹 **Remove address and itinerary if match is at "Ifoot"**
-  if (_locationType == 'Extérieur') {
-    matchData['address'] = _addressController.text.trim();
-    matchData['itinerary'] = _itineraryController.text.trim();
-  }
-
-  try {
-    await _firestore.collection('friendlyMatches').add(matchData);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Match enregistré avec succès!')),
-    );
-    Navigator.pop(context);
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Erreur lors de l\'enregistrement: $e')),
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.checkroom, color: Colors.blueAccent),
+              const SizedBox(width: 8),
+              Text(
+                "Tenue pour $group",
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _uniformControllers[group],
+            decoration: const InputDecoration(
+              labelText: 'Choisissez la tenue',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (value) {
+              setState(() {
+                _groupUniforms[group] = value;
+              });
+            },
+          ),
+        ],
+      ),
     );
   }
-}
 
+  Future<void> _saveMatch() async {
+    // ✅ Mise à jour des uniformes avant d'envoyer à Firebase
+    _groupUniforms = _uniformControllers.map((group, controller) {
+      return MapEntry(group, controller.text.trim());
+    });
+
+    if (_matchType == 'Contre un groupe Ifoot') {
+      _selectedGroups = [];
+      if (_group1 != null) _selectedGroups.add(_group1!);
+      if (_group2 != null) _selectedGroups.add(_group2!);
+
+      // 🔹 Vérification que les tenues sont bien saisies
+      if (_groupUniforms[_group1] == null ||
+          _groupUniforms[_group1]!.isEmpty ||
+          _groupUniforms[_group2] == null ||
+          _groupUniforms[_group2]!.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Veuillez saisir la tenue pour chaque équipe.')),
+        );
+        return;
+      }
+    }
+
+    final matchData = {
+      'matchType': _matchType,
+      'description': _descriptionController.text.trim(),
+      'locationType': _locationType,
+      'fee': _isFree ? '0' : _feeController.text.trim(),
+      'dates': _matchDates.map((date) => Timestamp.fromDate(date)).toList(),
+      'selectedGroups': _selectedGroups,
+      'selectedChildren':
+          _matchType == 'Contre une académie' ? _selectedChildren : [],
+      'transportMode': _locationType == 'Ifoot' ? null : _transportMode,
+      'startTime': _startTime?.format(context),
+      'endTime': _endTime?.format(context),
+      'coaches': _selectedCoaches,
+      'tenue': _tenueController.text.trim(),
+      'uniforms': _groupUniforms, // ✅ Sauvegarde correcte des uniformes
+    };
+
+    if (_matchType == 'Contre une académie') {
+      matchData['matchName'] = _matchNameController.text.trim();
+    }
+
+    if (_matchType == 'Contre un groupe Ifoot') {
+      matchData['uniforms'] = {
+        _group1!: _groupUniforms[_group1] ?? '',
+        _group2!: _groupUniforms[_group2] ?? '',
+      };
+    }
+
+    if (_locationType == 'Extérieur') {
+      matchData['address'] = _addressController.text.trim();
+      matchData['itinerary'] = _itineraryController.text.trim();
+    }
+
+    try {
+      // ✅ Vérification de l'ID de l'événement
+      final String? eventId = widget.eventData?['id'];
+
+      if (eventId != null && eventId.isNotEmpty) {
+        // ✅ Mettre à jour l'événement existant
+        await _firestore
+            .collection('friendlyMatches')
+            .doc(eventId)
+            .update(matchData);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Match mis à jour avec succès!')),
+        );
+      } else {
+        // ✅ Créer un nouvel événement si l'ID n'existe pas
+        DocumentReference newEvent =
+            await _firestore.collection('friendlyMatches').add(matchData);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Match enregistré avec succès!')),
+        );
+
+        // 🔹 Ajouter l'ID généré au document pour éviter ce bug à l'avenir
+        await newEvent.update({'id': newEvent.id});
+      }
+
+      Navigator.pop(context);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur lors de l\'enregistrement: $e')),
+      );
+    }
+  }
 }

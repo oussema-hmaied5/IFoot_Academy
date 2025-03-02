@@ -1,6 +1,9 @@
+// ignore_for_file: library_private_types_in_public_api, use_build_context_synchronously, deprecated_member_use
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:ifoot_academy/Pages/Back-office/Backend_template.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:ifoot_academy/Pages/Back-office/backend_template.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -31,8 +34,10 @@ class _TournamentFormState extends State<TournamentForm> {
   List<DateTime> _tournamentDates = [];
   List<String> _selectedGroups = [];
   List<String> _selectedChildren = [];
+  final _dateController = TextEditingController();
   String? _transportMode;
-
+  final List<String> _selectedCoaches = []; // ✅ Liste des coachs assignés
+  List<Map<String, dynamic>> _coaches = []; // ✅ Correct
   final List<String> _locationTypes = ['Ifoot', 'Extérieur'];
   final List<String> _transportModes = ['Covoiturage', 'Bus', 'Individuel'];
   Map<String, List<String>> _childrenByGroup = {};
@@ -41,14 +46,164 @@ class _TournamentFormState extends State<TournamentForm> {
   @override
   void initState() {
     super.initState();
+    _fetchCoaches();
+
     _fetchGroupsAndChildren();
     if (widget.tournament != null) {
       _loadTournamentData(widget.tournament!);
     }
-    if (widget.eventData != null) {
-      _loadTournamentDataFromEvent(widget.eventData!);
+ 
+  }
+
+  Future<void> _fetchCoaches() async {
+    try {
+      final snapshot = await _firestore.collection('coaches').get();
+      final allCoaches = snapshot.docs.map((doc) => {
+        'id': doc.id,
+        'name': doc.data()['name'],
+        'maxSessionsPerDay': doc.data().containsKey('maxSessionsPerDay')
+            ? doc.data()['maxSessionsPerDay']
+            : 2,
+        'maxSessionsPerWeek': doc.data().containsKey('maxSessionsPerWeek')
+            ? doc.data()['maxSessionsPerWeek']
+            : 10,
+      }).toList();
+
+      setState(() {
+        _coaches = allCoaches;
+      });
+  // ✅ Charger les séances en fonction de la date actuelle (ou date sélectionnée)
+    if (_dateController.text.isNotEmpty) {
+      DateTime selectedDate = DateFormat('dd/MM/yyyy').parse(_dateController.text);
+      await _fetchCoachSessionCounts(selectedDate);
+    }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur lors de la récupération des coachs: $e')),
+      );
     }
   }
+
+
+Future<void> _fetchCoachSessionCounts(DateTime selectedDate) async {
+  // ✅ Déterminer la semaine (du lundi au dimanche)
+  DateTime startOfWeek = selectedDate.subtract(Duration(days: selectedDate.weekday - 1));
+  DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
+
+  Map<String, int> dailySessions = {};
+  Map<String, int> weeklySessions = {};
+
+  // ✅ Liste des collections à vérifier
+  List<String> collections = ['trainings', 'championships', 'friendlyMatches', 'tournaments'];
+
+  for (String collection in collections) {
+    final snapshot = await _firestore.collection(collection).get();
+
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      if (!data.containsKey('coaches')) continue;
+
+      List<dynamic> assignedCoaches = data['coaches'];
+
+      DateTime sessionDate = DateTime.now();
+      if (data.containsKey('date')) {
+        // ✅ Convertir la date correctement
+        if (data['date'] is Timestamp) {
+          sessionDate = (data['date'] as Timestamp).toDate();
+        } else if (data['date'] is String) {
+          try {
+            sessionDate = DateTime.parse(data['date']);
+          } catch (e) {
+            continue;
+          }
+        } else {
+          continue;
+        }
+      } else if (collection == "championships" && data.containsKey('matchDays')) {
+        // ✅ Extraire les dates des matchs dans un championnat
+        for (var matchDay in data['matchDays']) {
+          if (matchDay is Map<String, dynamic> && matchDay.containsKey('date')) {
+            try {
+              sessionDate = DateTime.parse(matchDay['date']);
+            } catch (e) {
+              continue;
+            }
+          } else {
+            continue;
+          }
+        }
+      } else {
+        continue;
+      }
+
+      for (var coachId in assignedCoaches) {
+        if (coachId == null) continue;
+
+        // ✅ Vérifier si la session est aujourd'hui
+        if (sessionDate.isAtSameMomentAs(selectedDate)) {
+          dailySessions[coachId] = (dailySessions[coachId] ?? 0) + 1;
+        }
+
+        // ✅ Vérifier si la session est cette semaine (entre lundi et dimanche)
+        if (sessionDate.isAfter(startOfWeek) && sessionDate.isBefore(endOfWeek.add(const Duration(days: 1)))) {
+          weeklySessions[coachId] = (weeklySessions[coachId] ?? 0) + 1;
+        }
+      }
+    }
+  }
+
+  // ✅ Mettre à jour les coachs avec les sessions comptées
+  setState(() {
+    for (var coach in _coaches) {
+      String coachId = coach['id'];
+      coach['dailySessions'] = dailySessions[coachId] ?? 0;
+      coach['weeklySessions'] = weeklySessions[coachId] ?? 0;
+    }
+  });
+}
+
+
+Widget _buildCoachSelection() {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text("Coachs disponibles", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+      const SizedBox(height: 10),
+      Wrap(
+        spacing: 8.0,
+        runSpacing: 4.0,
+        children: _coaches.map((coach) {
+          final isSelected = _selectedCoaches.contains(coach['id']);
+          final maxPerDay = (coach['maxSessionsPerDay'] ?? 2);
+          final maxPerWeek = (coach['maxSessionsPerWeek'] ?? 10);
+          final dailySessions = (coach['dailySessions'] ?? 0);
+          final weeklySessions = (coach['weeklySessions'] ?? 0);
+
+          final remainingDaily = maxPerDay - dailySessions;
+          final remainingWeekly = maxPerWeek - weeklySessions;
+
+          return ChoiceChip(
+            label: Text("${coach['name']} 📅$remainingDaily/$maxPerDay 🗓️$remainingWeekly/$maxPerWeek"),
+            selected: isSelected,
+            selectedColor: Colors.blueAccent,
+            backgroundColor: Colors.grey[200],
+            onSelected: (bool selected) {
+              setState(() {
+                if (selected) {
+                  _selectedCoaches.add(coach['id']);
+                } else {
+                  _selectedCoaches.remove(coach['id']);
+                }
+              });
+            },
+          );
+        }).toList(),
+      ),
+    ],
+  );
+}
+
+
 
   Future<void> _fetchGroupsAndChildren() async {
     final groupsSnapshot = await _firestore.collection('groups').get();
@@ -83,77 +238,6 @@ class _TournamentFormState extends State<TournamentForm> {
     _selectedGroups = List<String>.from(data['selectedGroups'] ?? []);
     _selectedChildren = List<String>.from(data['selectedChildren'] ?? []);
     _transportMode = data['transportMode'];
-  }
-
-  void _loadTournamentDataFromEvent(Map<String, dynamic> eventData) {
-    _nameController.text = eventData['name'] ?? '';
-    _descriptionController.text = eventData['description'] ?? '';
-    _locationType = eventData['locationType'];
-    _addressController.text = eventData['address'] ?? '';
-    _itineraryController.text = eventData['itinerary'] ?? '';
-    _feeController.text = eventData['fee'] ?? '';
-    _isFree = eventData['fee'] == 'Gratuit';
-    _tenueController.text = eventData['tenue'] ?? '';
-    _documentsController.text = eventData['documents'] ?? '';
-    _tournamentDates = (eventData['dates'] as List)
-        .map((date) => date is Timestamp ? date.toDate() : DateTime.parse(date))
-        .toList();
-    _selectedGroups = List<String>.from(eventData['selectedGroups'] ?? []);
-    _selectedChildren = List<String>.from(eventData['selectedChildren'] ?? []);
-    _transportMode = eventData['transportMode'];
-  }
-
-  Future<void> _pickDate() async {
-    final pickedDate = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime(2100),
-    );
-
-    if (pickedDate != null) {
-      setState(() => _tournamentDates.add(pickedDate));
-    }
-  }
-
-  Future<void> _pickTime(
-      BuildContext context, void Function(String) onTimePicked) async {
-    TimeOfDay? pickedTime = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.now(),
-      builder: (context, child) {
-        return MediaQuery(
-          data: MediaQuery.of(context)
-              .copyWith(alwaysUse24HourFormat: true), // ✅ Force 24-hour format
-          child: child!,
-        );
-      },
-    );
-
-    if (pickedTime != null) {
-      // Convert to "HH:mm" format
-      String formattedTime =
-          "${pickedTime.hour.toString().padLeft(2, '0')}:${pickedTime.minute.toString().padLeft(2, '0')}";
-      onTimePicked(formattedTime);
-    }
-  }
-
-  Future<void> _openMaps() async {
-    final address = _addressController.text;
-    if (address.isNotEmpty) {
-      final url = 'https://www.google.com/maps/search/?api=1&query=$address';
-      if (await canLaunch(url)) {
-        await launch(url);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Impossible d\'ouvrir Google Maps.')),
-        );
-      }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Veuillez entrer une adresse.')),
-      );
-    }
   }
 
   Widget _buildSectionTitle(String title, IconData icon) {
@@ -231,45 +315,7 @@ class _TournamentFormState extends State<TournamentForm> {
     );
   }
 
-  Widget _buildDateSelector() {
-    return Card(
-      elevation: 3,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            ElevatedButton.icon(
-              onPressed: _pickDate,
-              icon: const Icon(Icons.date_range),
-              label: const Text('Ajouter une date'),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: _tournamentDates.map((date) {
-                    String formattedDate =
-                        DateFormat("dd/MM/yyyy").format(date);
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                      child: Chip(
-                        label: Text(formattedDate),
-                        deleteIcon: const Icon(Icons.cancel,
-                            size: 18, color: Colors.red),
-                        onDeleted: () =>
-                            setState(() => _tournamentDates.remove(date)),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+ 
 
   @override
   Widget build(BuildContext context) {
@@ -293,8 +339,30 @@ class _TournamentFormState extends State<TournamentForm> {
             ),
             const SizedBox(height: 16),
             _buildSectionTitle('Date du Tournoi', Icons.date_range),
-            _buildDateSelector(),
-            const SizedBox(height: 16),
+              TextField(
+              controller: _dateController,
+              readOnly: true,
+              decoration: const InputDecoration(
+                labelText: 'Sélectionner une date',
+                border: OutlineInputBorder(),
+              ),
+              onTap: () async {
+                DateTime? pickedDate = await showDatePicker(
+                  context: context,
+                  initialDate: DateTime.now(),
+                  firstDate: DateTime.now(),
+                  lastDate: DateTime(2100),
+                );
+                if (pickedDate != null) {
+                  setState(() {
+                    _dateController.text =
+                        DateFormat('dd/MM/yyyy').format(pickedDate);
+                  });
+                await _fetchCoachSessionCounts(pickedDate);
+
+                }
+              },
+            ),            const SizedBox(height: 16),
             _buildSectionTitle('Lieu et Itinéraire', Icons.place),
             DropdownButtonFormField<String>(
               value: _locationType,
@@ -319,34 +387,45 @@ class _TournamentFormState extends State<TournamentForm> {
                 ),
               ),
               const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: _openMaps,
-                child: const Text('Choisir un point sur Google Maps'),
+             Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _itineraryController,
+                          readOnly: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Itinéraire',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8.0),
+                          ),
+                        ),
+                        onPressed: _selectItinerary,
+                        child: const Text('Choisir sur la carte'),
+                      ),
+                    ],
+                  ),
+              const SizedBox(height: 16),
+              _buildSectionTitle('Transport', Icons.directions_bus),
+              DropdownButtonFormField<String>(
+                value: _transportMode,
+                items: _transportModes.map((mode) {
+                  return DropdownMenuItem(value: mode, child: Text(mode));
+                }).toList(),
+                onChanged: (value) => setState(() => _transportMode = value),
+                decoration: const InputDecoration(
+                  labelText: 'Mode de transport',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.directions_bus),
+                ),
               ),
             ],
-            const SizedBox(height: 16),
-            TextField(
-              controller: _itineraryController,
-              decoration: const InputDecoration(
-                labelText: 'Itinéraire',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.directions),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildSectionTitle('Transport', Icons.directions_bus),
-            DropdownButtonFormField<String>(
-              value: _transportMode,
-              items: _transportModes.map((mode) {
-                return DropdownMenuItem(value: mode, child: Text(mode));
-              }).toList(),
-              onChanged: (value) => setState(() => _transportMode = value),
-              decoration: const InputDecoration(
-                labelText: 'Mode de transport',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.directions_bus),
-              ),
-            ),
             const SizedBox(height: 16),
             _buildSectionTitle(
                 'Informations Financières', Icons.monetization_on),
@@ -357,9 +436,9 @@ class _TournamentFormState extends State<TournamentForm> {
                     controller: _feeController,
                     enabled: !_isFree,
                     decoration: const InputDecoration(
-                      labelText: 'Tarif (en €)',
+                      labelText: 'Tarif (en TND)',
                       border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.euro),
+                      prefixIcon: Icon(Icons.money),
                     ),
                     keyboardType: TextInputType.number,
                   ),
@@ -413,6 +492,8 @@ class _TournamentFormState extends State<TournamentForm> {
             const SizedBox(height: 16),
             _buildGroupAndChildrenSelection(),
             const SizedBox(height: 16),
+            _buildCoachSelection(),
+            const SizedBox(height: 16),
             ElevatedButton.icon(
               onPressed: _saveTournament,
               icon: const Icon(Icons.save),
@@ -423,6 +504,28 @@ class _TournamentFormState extends State<TournamentForm> {
         ),
       ),
     );
+  }
+  
+Future<void> _selectItinerary() async {
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      final mapsUrl =
+          'https://www.google.com/maps?q=${position.latitude},${position.longitude}';
+
+      if (await canLaunch(mapsUrl)) {
+        await launch(mapsUrl);
+        _itineraryController.text =
+            '${position.latitude}, ${position.longitude}';
+      } else {
+        throw 'Could not open the map.';
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur lors de la localisation : $e')),
+      );
+    }
   }
 
   Future<void> _saveTournament() async {
@@ -450,6 +553,8 @@ class _TournamentFormState extends State<TournamentForm> {
           .toList(), // ✅ Store as Timestamp
       'selectedGroups': _selectedGroups,
       'selectedChildren': _selectedChildren,
+      'coaches': _selectedCoaches,
+
       'transportMode': _transportMode,
     };
 
@@ -475,6 +580,4 @@ class _TournamentFormState extends State<TournamentForm> {
       );
     }
   }
-
-  
 }

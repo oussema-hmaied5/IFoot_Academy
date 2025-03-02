@@ -24,19 +24,11 @@ class PlayerRoutes {
 
       // Events
       case '/manageEvents':
-        return MaterialPageRoute(builder: (_) =>  EventManager());
+        return MaterialPageRoute(builder: (_) =>  const EventManager());
 
       default:
         return null;
     }
   }
 
-  static Route<dynamic> _errorRoute() {
-    return MaterialPageRoute(
-      builder: (_) => Scaffold(
-        appBar: AppBar(title: const Text('Error')),
-        body: const Center(child: Text('Player route not found')),
-      ),
-    );
-  }
 }

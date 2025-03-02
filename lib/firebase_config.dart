@@ -23,8 +23,5 @@ class FirebaseConfig {
       appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.deviceCheck,
     );
 
-
-     print("✅ Firebase and App Check initialized successfully!");
-
   }
 }

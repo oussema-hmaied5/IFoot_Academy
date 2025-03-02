@@ -1,7 +1,9 @@
+// ignore_for_file: unused_element, duplicate_ignore
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:ifoot_academy/Pages/Back-office/Backend_template.dart';
+import 'package:ifoot_academy/Pages/Back-office/backend_template.dart';
 import 'package:intl/intl.dart';
 
 class CoachDetailsPage extends StatefulWidget {
@@ -10,18 +12,21 @@ class CoachDetailsPage extends StatefulWidget {
   const CoachDetailsPage({Key? key, required this.coachId}) : super(key: key);
 
   @override
+  // ignore: library_private_types_in_public_api
   _CoachDetailsPageState createState() => _CoachDetailsPageState();
 }
 
 class _CoachDetailsPageState extends State<CoachDetailsPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   DateTimeRange? _selectedRange;
+  bool _showLoisirGroups = false;
+  bool _showPerfectionnementGroups = false;
 
   @override
   void initState() {
     super.initState();
     _selectedRange = DateTimeRange(
-      start: DateTime.now().subtract(const Duration(days: 30)),
+      start: DateTime.now().subtract(const Duration(days: 7)),
       end: DateTime.now(),
     );
   }
@@ -30,7 +35,7 @@ class _CoachDetailsPageState extends State<CoachDetailsPage> {
     final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2023),
-      lastDate: DateTime.now(),
+      lastDate: DateTime(2030),
       initialDateRange: _selectedRange,
     );
     if (picked != null) {
@@ -40,11 +45,12 @@ class _CoachDetailsPageState extends State<CoachDetailsPage> {
     }
   }
 
- @override
+
+  @override
   Widget build(BuildContext context) {
     return TemplatePageBack(
-      title: 'Détails du Coach',
-      footerIndex: 1,
+      title: ('Détails du Coach'),
+      footerIndex: 2,
       isCoach: true,
       body: FutureBuilder<DocumentSnapshot>(
         future: _firestore.collection('coaches').doc(widget.coachId).get(),
@@ -65,28 +71,13 @@ class _CoachDetailsPageState extends State<CoachDetailsPage> {
             children: [
               _buildHeaderSection(coach),
               _buildDateRangeSelector(context),
-              _buildStatsSection(),
-              _buildMatchTournamentStats(),
               _buildGroupTypeDistribution(),
-              _buildTrainingEvolutionGraph(),
+              _buildGeneralStats(),
               _buildDetailsSection('Informations Personnelles', [
                 _buildDetailRow('Nom', coach['name'] ?? 'Non spécifié'),
                 _buildDetailRow('Email', coach['email'] ?? 'Non spécifié'),
                 _buildDetailRow('Téléphone', coach['phone'] ?? 'Non spécifié'),
                 _buildDetailRow('Adresse', coach['address'] ?? 'Non spécifié'),
-                _buildDetailRow(
-                  'Date de Naissance',
-                  coach['birthDate'] != null
-                      ? DateFormat('dd/MM/yyyy').format(
-                          (coach['birthDate'] as Timestamp).toDate(),
-                        )
-                      : 'Non spécifiée',
-                ),
-                _buildDetailRow('Situation Familiale',
-                    coach['maritalStatus'] ?? 'Non spécifiée'),
-                _buildDetailRow(
-                    'Nombre d’Enfants',
-                    coach['children']?.toString() ?? 'Aucun enfant'),
               ]),
               _buildDetailsSection('Informations Professionnelles', [
                 _buildDetailRow(
@@ -95,22 +86,8 @@ class _CoachDetailsPageState extends State<CoachDetailsPage> {
                     coach['maxSessionsPerDay']?.toString() ?? '0'),
                 _buildDetailRow('Max Séances/Semaine',
                     coach['maxSessionsPerWeek']?.toString() ?? '0'),
-                _buildDetailRow(
-                  'Diplôme',
-                  coach['diploma'] == 'Oui'
-                      ? coach['diplomaType'] ?? 'Non spécifié'
-                      : 'Aucun',
-                ),
-                _buildDetailRow('Niveau du Coach',
-                    coach['coachLevel'] ?? 'Non spécifié'),
-                const SizedBox(height: 10),
-                const Text(
-                  'Objectifs :',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                ...List<String>.from(coach['objectives'] ?? [])
-                    .map((objective) => Text('- $objective'))
-                    .toList(),
+                _buildDetailRow('Niveau', coach['coachLevel'] ?? 'Non spécifié'),
+
               ]),
             ],
           );
@@ -119,9 +96,333 @@ class _CoachDetailsPageState extends State<CoachDetailsPage> {
     );
   }
 
-  
+  /// ✅ **Build Expandable Sections for Loisir & Perfectionnement**
+  Widget _buildGroupTypeDistribution() {
+  return FutureBuilder<Map<String, Map<String, dynamic>>>(
+    future: _fetchGroupTrainingStats(),
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const Center(child: CircularProgressIndicator());
+      }
 
-   Widget _buildDetailsSection(String title, List<Widget> details) {
+      if (!snapshot.hasData || snapshot.data == null || snapshot.data!.isEmpty) {
+        return const Center(child: Text('Aucune donnée disponible.'));
+      }
+
+      final stats = snapshot.data!;
+
+      // ✅ Ensure the keys exist before accessing them
+      final loisirStats = stats.containsKey('Loisirs') ? stats['Loisirs']! : {'total': 0, 'groups': <String, int>{}};
+      final perfectionnementStats = stats.containsKey('Perfectionnement')
+          ? stats['Perfectionnement']!
+          : {'total': 0, 'groups': <String, int>{}};
+
+      return Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 🏆 Section Title with Icon
+           const  Row(
+                children: [
+                  Icon(Icons.bar_chart, color: Colors.blueAccent, size: 28),
+                  SizedBox(width: 10),
+                  Text(
+                    "📊 Répartition des Entraînements",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueAccent),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+
+              // 🏖️ Loisir & 🏅 Perfectionnement Sections
+              _buildCategoryExpansion("🏖️ Loisirs", loisirStats, _showLoisirGroups, () {
+                setState(() {
+                  _showLoisirGroups = !_showLoisirGroups;
+                });
+              }),
+
+              _buildCategoryExpansion("🏅 Perfectionnement", perfectionnementStats, _showPerfectionnementGroups, () {
+                setState(() {
+                  _showPerfectionnementGroups = !_showPerfectionnementGroups;
+                });
+              }),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+/// ✅ **Creates Expandable Sections for Loisir & Perfectionnement**
+Widget _buildCategoryExpansion(String title, Map<String, dynamic> data, bool isExpanded, VoidCallback onToggle) {
+  return Column(
+    children: [
+      ListTile(
+        title: Text(
+          "$title (${data['total']})",
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        trailing: IconButton(
+          icon: Icon(isExpanded ? Icons.expand_less : Icons.expand_more, color: Colors.blueAccent),
+          onPressed: onToggle,
+        ),
+      ),
+      if (isExpanded)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          child: Column(
+            children: (data['groups'] as Map<String, int>).entries.map((entry) {
+              return _buildDetailRow(entry.key, entry.value.toString());
+            }).toList(),
+          ),
+        ),
+      const Divider(),
+    ],
+  );
+}
+
+
+  /// ✅ **Fetch Group Type Statistics with Coach Training Counts**
+ /// ✅ Fetch Training Stats for ALL Groups (Even with 0 Trainings)
+Future<Map<String, Map<String, dynamic>>> _fetchGroupTrainingStats() async {
+  try {
+    if (_selectedRange == null) {
+      return {
+        'Loisirs': {'total': 0, 'groups': <String, int>{}},
+        'Perfectionnement': {'total': 0, 'groups': <String, int>{}},
+      };
+    }
+
+    // 🔥 Step 1: Fetch all groups (Loisir & Perfectionnement)
+    final allGroupsSnapshot = await _firestore.collection('groups').get();
+    Map<String, Map<String, dynamic>> groupStats = {
+      'Loisirs': {'total': 0, 'groups': <String, int>{}},
+      'Perfectionnement': {'total': 0, 'groups': <String, int>{}},
+    };
+
+    for (var doc in allGroupsSnapshot.docs) {
+      final groupData = doc.data();
+      String groupName = groupData['name'] ?? 'Inconnu';
+      String groupType = groupData['type'] ?? 'Inconnu';
+
+      if (groupStats.containsKey(groupType)) {
+        groupStats[groupType]!['groups'][groupName] = 0; // 🔥 Default: 0 trainings
+      }
+    }
+
+    // 🔥 Step 2: Fetch only trainings within the selected date range
+    final trainingSnapshot = await _firestore
+        .collection('trainings')
+        .where('coaches', arrayContains: widget.coachId)
+        .where('date', isGreaterThanOrEqualTo: _selectedRange!.start.toIso8601String())
+        .where('date', isLessThanOrEqualTo: _selectedRange!.end.toIso8601String())
+        .get();
+
+    // 🔥 Step 3: Update training counts for groups that were trained
+    for (var doc in trainingSnapshot.docs) {
+      final trainingData = doc.data();
+      String groupId = trainingData['groupId'] ?? '';
+
+      DocumentSnapshot groupDoc = await _firestore.collection('groups').doc(groupId).get();
+      if (groupDoc.exists && groupDoc.data() != null) {
+        String groupName = (groupDoc.data() as Map<String, dynamic>)['name'] ?? 'Inconnu';
+        String groupType = (groupDoc.data() as Map<String, dynamic>)['type'] ?? 'Inconnu';
+
+        if (groupStats.containsKey(groupType)) {
+          groupStats[groupType]!['groups'][groupName] =
+              (groupStats[groupType]!['groups'][groupName] ?? 0) + 1;
+          groupStats[groupType]!['total'] =
+              (groupStats[groupType]!['total'] ?? 0) + 1;
+        }
+      }
+    }
+
+    return groupStats;
+  } catch (e) {
+    return {
+      'Loisirs': {'total': 0, 'groups': <String, int>{}},
+      'Perfectionnement': {'total': 0, 'groups': <String, int>{}},
+    };
+  }
+}
+
+
+  /// ✅ **Builds the Expandable Section**
+  // ignore: unused_element
+  Widget _buildExpandableSection(String title, Map<String, dynamic> data,
+      bool isExpanded, VoidCallback onToggle) {
+    return Card(
+      elevation: 3,
+      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+      child: Column(
+        children: [
+          ListTile(
+            title: Text('$title (${data['total']})',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            trailing: IconButton(
+              icon: Icon(isExpanded ? Icons.expand_less : Icons.expand_more,
+                  color: Colors.blueAccent),
+              onPressed: onToggle,
+            ),
+          ),
+          if (isExpanded)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Column(
+                children:
+                    (data['groups'] as Map<String, int>).entries.map((entry) {
+                  return _buildDetailRow(entry.key, entry.value.toString());
+                }).toList(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+
+
+  Widget _buildHeaderSection(Map<String, dynamic> coach) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(50),
+          child: coach.containsKey('imageUrl') && coach['imageUrl'] != null
+              ? Image.network(
+                  coach['imageUrl'],
+                  width: 100,
+                  height: 100,
+                  fit: BoxFit.cover,
+                )
+              : Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.grey[300],
+                  ),
+                  child: const Icon(
+                    Icons.person,
+                    size: 60,
+                    color: Colors.white,
+                  ),
+                ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          coach['name'] ?? 'Non spécifié',
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: Colors.blueAccent,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateRangeSelector(BuildContext context) {
+    return Card(
+      elevation: 3,
+      child: ListTile(
+        title: Text(
+          "Période: ${DateFormat('dd/MM/yyyy').format(_selectedRange!.start)} - ${DateFormat('dd/MM/yyyy').format(_selectedRange!.end)}",
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        trailing: const Icon(Icons.date_range),
+        onTap: () => _selectDateRange(context),
+      ),
+    );
+  }
+
+  Future<Map<String, int>> _fetchMatchTournamentStats() async {
+    final snapshot = await _firestore
+        .collection('trainings') // Collection des entraînements et compétitions
+        .where('coaches', arrayContains: widget.coachId)
+        .get();
+
+    int trainingCount = 0;
+    int tournamentCount = 0;
+    int championshipCount = 0;
+    int friendlyMatchCount = 0;
+
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      switch (data['type']) {
+        case 'Training':
+          trainingCount++;
+          break;
+        case 'Tournament':
+          tournamentCount++;
+          break;
+        case 'Championship':
+          championshipCount++;
+          break;
+        case 'FriendlyMatch':
+          friendlyMatchCount++;
+          break;
+      }
+    }
+
+    return {
+      'Training': trainingCount,
+      'Tournament': tournamentCount,
+      'Championship': championshipCount,
+      'FriendlyMatch': friendlyMatchCount,
+    };
+  }
+
+Future<Map<int, int>> _fetchTrainingEvolutionData() async {
+  try {
+    final snapshot = await _firestore
+        .collection('trainings')
+        .where('coaches', arrayContains: widget.coachId) // Sessions du coach
+        .orderBy('date', descending: false)
+        .get();
+
+    Map<int, int> monthlyData = {}; // Clé: Mois (1=Jan, 2=Fév), Valeur: Nb de sessions
+
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+
+      if (data.containsKey('date') && data['date'] != null) {
+        DateTime date;
+
+        if (data['date'] is Timestamp) {
+          // ✅ Si c'est un Timestamp, convertir normalement
+          date = (data['date'] as Timestamp).toDate();
+        } else if (data['date'] is String) {
+          try {
+            // ✅ Essayer de convertir depuis une String
+            date = DateTime.parse(data['date']);
+          } catch (e) {
+            continue; // ⏭️ Ignorer cette entrée si erreur
+          }
+        } else {
+          continue; // ⏭️ Passer si format non reconnu
+        }
+
+        int month = date.month; // Récupérer le mois
+        monthlyData[month] = (monthlyData[month] ?? 0) + 1; // Compter les sessions
+      }
+    }
+
+    return monthlyData;
+  } catch (e) {
+    return {};
+  }
+}
+
+
+ 
+
+  Widget _buildDetailsSection(String title, List<Widget> details) {
     return Card(
       elevation: 4,
       margin: const EdgeInsets.symmetric(vertical: 8.0),
@@ -146,410 +447,167 @@ class _CoachDetailsPageState extends State<CoachDetailsPage> {
     );
   }
 
-  Widget _buildHeaderSection(Map<String, dynamic> coach) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(50), // Circular image
-          child: coach.containsKey('imageUrl') &&
-                  coach['imageUrl'] != null &&
-                  coach['imageUrl'].isNotEmpty
-              ? Image.network(
-                  coach['imageUrl'],
-                  width: 100,
-                  height: 100,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) =>
-                      const Icon(Icons.person, size: 100, color: Colors.grey),
-                )
-              : Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.grey[300], // Light grey background
-                  ),
-                  child: const Icon(
-                    Icons.person, // Default user icon
-                    size: 60,
-                    color: Colors.white,
-                  ),
-                ),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          coach['name'] ?? 'Non spécifié',
-          style: const TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: Colors.blueAccent,
-          ),
-        ),
-        Text(
-          coach['email'] ?? 'Email non spécifié',
-          style: const TextStyle(fontSize: 16, color: Colors.grey),
-        ),
-      ],
-    );
-  }
+  Future<Map<String, int>> _fetchGeneralStats() async {
+    int trainingCount = 0;
+    int tournamentCount = 0;
+    int championshipCount = 0;
+    int friendlyMatchCount = 0;
 
+    // 📌 Récupération des trainings du coach
+    final trainingSnapshot = await _firestore
+        .collection('trainings')
+        .where('coaches', arrayContains: widget.coachId)
+        .get();
 
-  /// 📊 **Histogramme: Nombre de Matchs, Tournois, Championnats**
-  Widget _buildMatchTournamentStats() {
-    return FutureBuilder<QuerySnapshot>(
-      future: FirebaseFirestore.instance
-          .collection('trainings')
-          .where('coaches', arrayContains: widget.coachId)
-          .get(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    trainingCount = trainingSnapshot.docs.length;
 
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(child: Text('Aucune donnée pour cette période.'));
-        }
+    // 📌 Comptabilisation des championnats où le coach est assigné via les match days
+    final championshipSnapshot =
+        await _firestore.collection('championships').get();
+    championshipCount = 0; // ✅ Reset du compteur
 
-        int matchCount = 0;
-        int tournamentCount = 0;
-        int championshipCount = 0;
+    for (var doc in championshipSnapshot.docs) {
+      final championshipData = doc.data();
 
-        for (var doc in snapshot.data!.docs) {
-          final data = doc.data() as Map<String, dynamic>;
-          switch (data['type']) {
-            case 'Match':
-              matchCount++;
-              break;
-            case 'Tournament':
-              tournamentCount++;
-              break;
-            case 'Championship':
-              championshipCount++;
-              break;
+      if (championshipData.containsKey('matchDays') &&
+          championshipData['matchDays'] is List) {
+        for (var journee in championshipData['matchDays']) {
+          if (journee is Map<String, dynamic> &&
+              journee.containsKey('coaches') &&
+              journee['coaches'] is List) {
+            if (journee['coaches'].contains(widget.coachId)) {
+              championshipCount++; // ✅ Chaque matchDay compte comme 1 championnat
+            }
           }
         }
+      }
+    }
 
-        return Card(
-          elevation: 4,
-          margin: const EdgeInsets.symmetric(vertical: 8.0),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Statistiques des Compétitions',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 200,
-                  child: BarChart(
-                    BarChartData(
-                      alignment: BarChartAlignment.spaceAround,
-                      maxY: (matchCount + tournamentCount + championshipCount)
-                          .toDouble(),
-                      barGroups: [
-                        BarChartGroupData(
-                          x: 1,
-                          barRods: [
-                            BarChartRodData(
-                              y: matchCount.toDouble(),
-                              colors: [Colors.blue],
-                              width: 20,
-                            ),
-                          ],
-                        ),
-                        BarChartGroupData(
-                          x: 2,
-                          barRods: [
-                            BarChartRodData(
-                              y: tournamentCount.toDouble(),
-                              colors: [Colors.green],
-                              width: 20,
-                            ),
-                          ],
-                        ),
-                        BarChartGroupData(
-                          x: 3,
-                          barRods: [
-                            BarChartRodData(
-                              y: championshipCount.toDouble(),
-                              colors: [Colors.red],
-                              width: 20,
-                            ),
-                          ],
-                        ),
-                      ],
-                      titlesData: FlTitlesData(
-                        leftTitles: SideTitles(
-                          showTitles: true,
-                          getTitles: (value) => '${value.toInt()}',
-                        ),
-                        bottomTitles: SideTitles(
-                          showTitles: true,
-                          getTitles: (value) {
-                            switch (value.toInt()) {
-                              case 1:
-                                return 'Matchs';
-                              case 2:
-                                return 'Tournois';
-                              case 3:
-                                return 'Championnats';
-                              default:
-                                return '';
-                            }
-                          },
-                        ),
-                      ),
-                      borderData: FlBorderData(show: false),
-                      gridData: FlGridData(show: false),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+    // 📌 Récupération des tournois
+    final tournamentSnapshot = await _firestore
+        .collection('tournaments')
+        .where('coaches', arrayContains: widget.coachId)
+        .get();
+    tournamentCount = tournamentSnapshot.docs.length;
+
+    // 📌 Récupération des matchs amicaux
+    final friendlyMatchSnapshot = await _firestore
+        .collection('friendlyMatches')
+        .where('coaches', arrayContains: widget.coachId)
+        .get();
+    friendlyMatchCount = friendlyMatchSnapshot.docs.length;
+
+    return {
+      'Training': trainingCount,
+      'Tournament': tournamentCount,
+      'Championship':
+          championshipCount, // ✅ Maintenant ça représente bien les matchDays
+      'FriendlyMatch': friendlyMatchCount,
+    };
   }
 
-  /// 🥧 **Pie Chart: Distribution des types de groupes (Loisir vs Perfectionnement)**
-  Widget _buildGroupTypeDistribution() {
-    return FutureBuilder<QuerySnapshot>(
-      future: _firestore
-          .collection('trainings')
-          .where('coaches', arrayContains: widget.coachId)
-          .where('date',
-              isGreaterThanOrEqualTo: _selectedRange!.start.toIso8601String())
-          .where('date',
-              isLessThanOrEqualTo: _selectedRange!.end.toIso8601String())
-          .get(),
+  Widget _buildGeneralStats() {
+    return FutureBuilder<Map<String, int>>(
+      future: _fetchGeneralStats(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(child: Text('Aucune donnée pour cette période.'));
-        }
-
-        int loisirCount = 0;
-        int perfectionnementCount = 0;
-
-        for (var doc in snapshot.data!.docs) {
-          final data = doc.data() as Map<String, dynamic>;
-          if (data['groupType'] == "Loisir") {
-            loisirCount++;
-          } else if (data['groupType'] == "Perfectionnement") {
-            perfectionnementCount++;
-          }
-        }
-
-        return Card(
-          elevation: 4,
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Répartition des Types de Groupes',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 200,
-                  child: PieChart(
-                    PieChartData(
-                      sections: [
-                        PieChartSectionData(
-                          value: loisirCount.toDouble(),
-                          title: 'Loisir (${loisirCount})',
-                          color: Colors.blueAccent,
-                          radius: 50,
-                        ),
-                        PieChartSectionData(
-                          value: perfectionnementCount.toDouble(),
-                          title: 'Perfectionnement (${perfectionnementCount})',
-                          color: Colors.green,
-                          radius: 50,
-                        ),
-                      ],
-                      sectionsSpace: 5,
-                      centerSpaceRadius: 40,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-
-  /// ✅ **Sélecteur de période pour filtrer les statistiques**
-  Widget _buildDateRangeSelector(BuildContext context) {
-    return Card(
-      elevation: 3,
-      child: ListTile(
-        title: Text(
-          "Période: ${DateFormat('dd/MM/yyyy').format(_selectedRange!.start)} - ${DateFormat('dd/MM/yyyy').format(_selectedRange!.end)}",
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        trailing: const Icon(Icons.date_range),
-        onTap: () => _selectDateRange(context),
-      ),
-    );
-  }
-
-  /// 📊 **Statistiques générales (Nombre de séances, matchs, tournois)**
-  Widget _buildStatsSection() {
-    return FutureBuilder<QuerySnapshot>(
-      future: _firestore
-          .collection('trainings')
-          .where('coaches', arrayContains: widget.coachId)
-          .where('date',
-              isGreaterThanOrEqualTo: _selectedRange!.start.toIso8601String())
-          .where('date',
-              isLessThanOrEqualTo: _selectedRange!.end.toIso8601String())
-          .get(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return const Center(child: Text('Aucune donnée disponible.'));
         }
 
-        int trainingCount = 0;
-        int matchCount = 0;
-        int tournamentCount = 0;
+        final stats = snapshot.data!;
 
-        for (var doc in snapshot.data!.docs) {
-          final data = doc.data() as Map<String, dynamic>;
-          switch (data['type']) {
-            case 'Training':
-              trainingCount++;
-              break;
-            case 'Match':
-              matchCount++;
-              break;
-            case 'Tournament':
-              tournamentCount++;
-              break;
-          }
-        }
+        final trainingCount = stats['Training'] ?? 0;
+        final tournamentCount = stats['Tournament'] ?? 0;
+        final championshipCount = stats['Championship'] ?? 0;
+        final friendlyMatchCount = stats['FriendlyMatch'] ?? 0;
+        final matchDaysCount = stats['MatchDays'] ??
+            0; // ✅ Nombre de journées où le coach est affecté
+
+        final maxY = (trainingCount +
+                tournamentCount +
+                championshipCount +
+                friendlyMatchCount +
+                matchDaysCount)
+            .toDouble();
+        final adjustedMaxY = maxY == 0 ? 1 : maxY;
 
         return Card(
           elevation: 4,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 8),
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Statistiques Générales',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 10),
-                _buildDetailRow('Total Séances', trainingCount.toString()),
-                _buildDetailRow('Nombre de Matchs', matchCount.toString()),
-                _buildDetailRow(
-                    'Nombre de Tournois', tournamentCount.toString()),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  /// 📈 **Évolution des séances sous forme de courbe**
-  Widget _buildTrainingEvolutionGraph() {
-    return FutureBuilder<QuerySnapshot>(
-      future: _firestore
-          .collection('trainings')
-          .where('coaches', arrayContains: widget.coachId)
-          .where('date',
-              isGreaterThanOrEqualTo: _selectedRange!.start.toIso8601String())
-          .where('date',
-              isLessThanOrEqualTo: _selectedRange!.end.toIso8601String())
-          .orderBy('date', descending: true)
-          .get(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(child: Text('Aucune donnée pour cette période.'));
-        }
-
-        List<FlSpot> spots = [];
-        List<QueryDocumentSnapshot> docs =
-            snapshot.data!.docs.reversed.toList();
-        for (int i = 0; i < docs.length; i++) {
-          final data = docs[i].data() as Map<String, dynamic>;
-          final DateTime date = DateTime.parse(data['date']);
-          spots.add(FlSpot(i.toDouble(), i.toDouble()));
-        }
-
-        return Card(
-          elevation: 4,
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Évolution des Séances',
+                  '📊 Statistiques Générales',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 10),
                 SizedBox(
-                  height: 200,
-                  child: LineChart(
-                    LineChartData(
-                      gridData: FlGridData(show: false),
+                  height: 250,
+                  child: BarChart(
+                    BarChartData(
+                      alignment: BarChartAlignment.spaceBetween,
+                      maxY: adjustedMaxY.toDouble(),
+                      barGroups: [
+                        _buildBar(
+                            1, trainingCount, Colors.blue, "🏋️‍♂️\nTrainings"),
+                        _buildBar(
+                            2, tournamentCount, Colors.green, "🏆\nTournois"),
+                        _buildBar(3, championshipCount, Colors.purple,
+                            "📅\nMatch Days"), // ✅ Correction ici
+                        _buildBar(4, friendlyMatchCount, Colors.orange,
+                            "🤝\nAmicaux"),
+                      ],
                       titlesData: FlTitlesData(
                         leftTitles: SideTitles(
                           showTitles: true,
-                          getTitles: (value) => '${value.toInt()}',
+                          interval: 1,
+                          reservedSize: 30,
+                          getTitles: (value) => value.toInt().toString(),
                         ),
                         bottomTitles: SideTitles(
                           showTitles: true,
+                          reservedSize: 50,
                           getTitles: (value) {
                             switch (value.toInt()) {
                               case 1:
-                                return 'Matchs';
+                                return "🏋️‍♂️\nTrain";
+
                               case 2:
-                                return 'Tournois';
+                                return "🥇\nTour";
                               case 3:
-                                return 'Championnats';
+                                return "🏆\nChamp";
+
+                              case 4:
+                                return "🤝\nAmic";
+
                               default:
-                                return '';
+                                return "";
                             }
                           },
+                          getTextStyles: (context, value) => const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                       borderData: FlBorderData(show: false),
-                      lineBarsData: [
-                        LineChartBarData(
-                          spots: spots,
-                          isCurved: true,
-                          barWidth: 4,
-                          colors: [Colors.blue],
-                          belowBarData: BarAreaData(
-                              show: true,
-                              colors: [Colors.blue.withOpacity(0.3)]),
+                      gridData: FlGridData(
+                        show: true,
+                        checkToShowHorizontalLine: (value) => value % 1 == 0,
+                        getDrawingHorizontalLine: (value) => FlLine(
+                          color: const Color.fromARGB(255, 213, 27, 27),
+                          strokeWidth: 0.8,
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -561,23 +619,40 @@ class _CoachDetailsPageState extends State<CoachDetailsPage> {
     );
   }
 
-Widget _buildDetailRow(String label, String value) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4.0),
-    child: Row(
-      children: [
-        Expanded(
+// ✅ Fonction pour générer une barre
+  BarChartGroupData _buildBar(int x, int value, Color color, String label) {
+    return BarChartGroupData(
+      x: x,
+      barRods: [
+        BarChartRodData(
+          y: value.toDouble(),
+          colors: [color],
+          width: 22, // ✅ Barre plus fine pour éviter le chevauchement
+          borderRadius: BorderRadius.circular(6),
+        ),
+      ],
+      showingTooltipIndicators: [0],
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        children: [
+          Expanded(
             flex: 5,
             child: Text(
               '$label:',
               style: const TextStyle(fontWeight: FontWeight.bold),
-            )),
-        Expanded(
-          flex: 5,
-          child: Text(value),
-        ),
-      ],
-    ),
-  );
-}
+            ),
+          ),
+          Expanded(
+            flex: 5,
+            child: Text(value),
+          ),
+        ],
+      ),
+    );
+  }
 }

@@ -1,3 +1,5 @@
+// ignore_for_file: library_private_types_in_public_api
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -61,11 +63,13 @@ class _LoginPageState extends State<LoginPage> {
       await _handleUserNavigation(userId);
     } on FirebaseAuthException catch (e) {
       String error = "Email ou mot de passe incorrect.";
-      if (e.code == 'user-not-found')
+      if (e.code == 'user-not-found') {
         error = "Aucun utilisateur trouvé avec cet email.";
+      }
       if (e.code == 'wrong-password') error = "Mot de passe incorrect.";
-      if (e.code == 'invalid-email')
+      if (e.code == 'invalid-email') {
         error = "L'adresse email n'est pas valide.";
+      }
       _showSnackbar(error, Colors.red);
     } finally {
       setState(() => _isLoading = false);
@@ -84,6 +88,7 @@ class _LoginPageState extends State<LoginPage> {
           : role == 'joueur'
               ? '/playerDashboard'
               : '/main';
+      // ignore: use_build_context_synchronously
       Navigator.pushReplacementNamed(context, route, arguments: userId);
     } else {
       _showSnackbar("Utilisateur introuvable.", Colors.red);
