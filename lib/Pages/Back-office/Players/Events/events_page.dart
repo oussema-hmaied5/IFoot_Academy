@@ -140,7 +140,7 @@ Widget eventTile(
   allCoachIds = allCoachIds.toSet().toList(); // ✅ Supprime les doublons
 
   return Card(
-    margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
+    margin: const EdgeInsets.symmetric(vertical: 1, horizontal: 8),
     child: Column(
       children: [
         ListTile(
@@ -148,7 +148,7 @@ Widget eventTile(
           title: Text(
             eventData['name'] ?? "Match Amical",
             style: const TextStyle(
-                fontWeight: FontWeight.bold, fontSize: 18, color: Colors.blue),
+                fontWeight: FontWeight.bold, fontSize: 22, color: Colors.blue),
             overflow: TextOverflow.ellipsis,
           ),
         ),
@@ -167,6 +167,7 @@ Widget _buildExpandedEventDetails(
     String collection,
     List<dynamic> latestMatchDays,
     BuildContext context) {
+
   return Padding(
     padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
     child: Column(
@@ -182,50 +183,9 @@ Widget _buildExpandedEventDetails(
               "Lieu: ${eventData['locationType'] ?? 'N/A'}", Colors.red),
           _buildEventDetailRow(
               Icons.euro, "Frais: ${eventData['fee']} TND", Colors.teal),
-        ],
 
-        // ✅ TOURNOIS : Affiche uniquement pour "tournaments"
-        if (collection == "tournaments") ...[
-          _buildEventDetailRow(
-              Icons.groups,
-              "Groupes: ${(eventData['selectedGroups'] as List<dynamic>?)?.join(", ") ?? 'Aucun groupe'}",
-              Colors.green),
-          _buildEventDetailRow(Icons.location_on,
-              "Lieu: ${eventData['locationType'] ?? 'N/A'}", Colors.red),
-          _buildEventDetailRow(
-              Icons.emoji_events,
-              "Type de tournoi: ${eventData['tournamentType'] ?? 'Non défini'}",
-              Colors.amber),
-          _buildEventDetailRow(
-              Icons.people,
-              "Nombre d'équipes: ${eventData['numberOfTeams'] ?? 'Non défini'}",
-              Colors.blue),
-          _buildEventDetailRow(
-              Icons.euro, "Frais: ${eventData['fee']} TND", Colors.teal),
-        ],
-
-        if (collection == "friendlyMatches") ...[
-          _buildEventDetailRow(
-              Icons.sports_soccer,
-              "Type de match: ${eventData['matchType'] ?? 'Non défini'}",
-              Colors.green),
-          _buildEventDetailRow(Icons.location_on,
-              "Lieu: ${eventData['locationType'] ?? 'N/A'}", Colors.red),
-
-          // ✅ Afficher les uniformes seulement si le match est contre une académie
-          if (eventData['matchType'] == "Contre une académie")
-            _buildEventDetailRow(
-                Icons.school,
-                "Académie: ${eventData['matchName'] ?? 'Non définie'}",
-                Colors.blue),
-
-          // ✅ Afficher le nom de l'académie si le match est contre un groupe
-          if (eventData['matchType'] == "Contre un groupe")
-            _buildEventDetailRow(
-                Icons.checkroom,
-                "Uniformes: ${(eventData['uniforms'] as Map<String, dynamic>?)?.entries.map((e) => "${e.key}: ${e.value}").join(", ") ?? 'Non définis'}",
-                Colors.red),
-        ],
+               _buildEventDetailRow(Icons.location_on,
+            "Lieu: ${eventData['locationType'] ?? 'N/A'}", Colors.red),
 
         const SizedBox(height: 10),
 
@@ -234,8 +194,8 @@ Widget _buildExpandedEventDetails(
           const Text("📆 Dernières Journées :",
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           ...latestMatchDays.asMap().entries.map((entry) {
-               Map<String, dynamic> day = entry.value;
-              int journeeNumber = eventData['matchDays'].indexOf(day) + 1;
+            Map<String, dynamic> day = entry.value;
+            int journeeNumber = eventData['matchDays'].indexOf(day) + 1;
 
             List<String> coachIds = List<String>.from(day['coaches'] ?? []);
 
@@ -281,14 +241,61 @@ Widget _buildExpandedEventDetails(
                 ),
                 trailing: IconButton(
                   icon: const Icon(Icons.edit, color: Colors.blue),
-                  onPressed: () =>
-                      _navigateToEditJournee(context, event.id, eventData['matchDays'].indexOf(day), day),
+                  onPressed: () => _navigateToEditJournee(context, event.id,
+                      eventData['matchDays'].indexOf(day), day),
                 ),
               ),
             );
           }),
         ],
 
+        ],
+
+        // ✅ TOURNOIS : Affiche uniquement pour "tournaments"
+        if (collection == "tournaments") ...[
+          _buildEventDetailRow(
+              Icons.groups,
+              "Groupes: ${(eventData['selectedGroups'] as List<dynamic>?)?.join(", ") ?? 'Aucun groupe'}",
+              Colors.green),
+          _buildEventDetailRow(
+              Icons.date_range,
+              "Date: ${_formatEventDates(eventData['dates'])}",
+              const Color.fromARGB(255, 27, 13, 149)),
+          _buildEventDetailRow(Icons.location_on,
+              "Lieu: ${eventData['locationType'] ?? 'N/A'}", Colors.red),
+          _buildEventDetailRow(
+              Icons.money, "Frais: ${eventData['fee']} TND", Colors.teal),
+        ],
+
+        // ✅ MATCHS AMICAUX : Affiche uniquement pour "friendlyMatches"
+        if (collection == "friendlyMatches") ...[
+          _buildEventDetailRow(
+              Icons.sports_soccer,
+              "Type de match: ${eventData['matchType'] ?? 'Non défini'}",
+              Colors.green),
+
+          // ✅ Afficher les détails si le match est contre une académie
+          if (eventData['matchType'] == "Contre une académie") ...[
+            _buildEventDetailRow(
+                Icons.school,
+                "Académie: ${eventData['matchName'] ?? 'Non définie'}",
+                Colors.blue),
+            _buildEventDetailRow(
+                Icons.groups,
+                "Groupes: ${(eventData['selectedGroups'] as List<dynamic>?)?.join(", ") ?? 'Aucun groupe'}",
+                Colors.green),
+          ],
+
+          // ✅ Afficher les détails si le match est contre un groupe Ifoot
+          if (eventData['matchType'] == "Contre un groupe Ifoot") ...[
+            _buildEventDetailRow(
+                Icons.groups,
+                "Groupes: ${(eventData['selectedGroups'] as List<dynamic>?)?.join(", ") ?? 'Aucun groupe'}",
+                Colors.green),
+            if (eventData['uniforms'] is Map<String, dynamic>)
+              ..._buildUniformWidgets(eventData['uniforms']),
+          ],
+        ],
         const SizedBox(height: 10),
 
         // 🔹 Actions: Modifier / Supprimer (Affiché pour tous les événements)
@@ -311,7 +318,40 @@ Widget _buildExpandedEventDetails(
   );
 }
 
-void _navigateToEditJournee(BuildContext context, String eventId, int journeeIndex, Map<String, dynamic> journeeData) {
+List<Widget> _buildUniformWidgets(Map<String, dynamic> uniforms) {
+  List<Widget> uniformWidgets = [];
+  for (var entry in uniforms.entries) {
+    uniformWidgets.add(
+      _buildEventDetailRow(
+        Icons.checkroom,
+        "Tenue pour ${entry.key}: ${entry.value}",
+        Colors.purple,
+      ),
+    );
+  }
+  return uniformWidgets;
+}
+
+String _formatEventDates(dynamic dates) {
+  if (dates is List) {
+    return dates.map((date) {
+      if (date is Timestamp) {
+        return DateFormat("dd/MM/yyyy").format(date.toDate());
+      } else if (date is String) {
+        try {
+          return DateFormat("dd/MM/yyyy").format(DateTime.parse(date));
+        } catch (e) {
+          return date; // Return the original string if parsing fails
+        }
+      }
+      return "Inconnue";
+    }).join(", ");
+  }
+  return "N/A";
+}
+
+void _navigateToEditJournee(BuildContext context, String eventId,
+    int journeeIndex, Map<String, dynamic> journeeData) {
   Navigator.push(
     context,
     MaterialPageRoute(
@@ -325,10 +365,10 @@ void _navigateToEditJournee(BuildContext context, String eventId, int journeeInd
 }
 
 Future<List<String>> _fetchCoachNames(List<String> coachIds) async {
-  if (coachIds.isEmpty)
+  if (coachIds.isEmpty) {
     return []; // ✅ Retourner une liste vide si aucun coach n'est assigné
+  }
 
-  try {
     QuerySnapshot snapshot = await FirebaseFirestore.instance
         .collection('coaches')
         .where(FieldPath.documentId, whereIn: coachIds)
@@ -339,10 +379,7 @@ Future<List<String>> _fetchCoachNames(List<String> coachIds) async {
             doc['name'] as String? ??
             "Inconnu") // Sécurité en cas de champ manquant
         .toList();
-  } catch (e) {
-    print("🔥 Erreur lors de la récupération des coachs: $e");
-    return []; // Retourner une liste vide en cas d'erreur
-  }
+  
 }
 
 Widget _buildEventDetailRow(IconData icon, String text, Color iconColor) {
@@ -364,20 +401,6 @@ Widget _buildEventDetailRow(IconData icon, String text, Color iconColor) {
   );
 }
 
-void _navigateToJourneeDetails(BuildContext context, String championshipId,
-    int index, Map<String, dynamic> day) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => JourneeDetails(
-        championshipId: championshipId,
-        journeeIndex: index,
-        journeeData: day,
-      ),
-    ),
-  );
-}
-
 IconData _getEventIcon(String collection) =>
     {
       'championships': Icons.emoji_events,
@@ -387,8 +410,9 @@ IconData _getEventIcon(String collection) =>
     Icons.event;
 
 String _formatDate(dynamic dateField) {
-  if (dateField is Timestamp)
+  if (dateField is Timestamp) {
     return DateFormat("dd/MM/yyyy").format(dateField.toDate());
+  }
   if (dateField is String) return dateField;
   return "Inconnue";
 }

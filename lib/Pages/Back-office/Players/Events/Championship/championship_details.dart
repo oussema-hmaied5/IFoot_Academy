@@ -151,8 +151,8 @@ class _ChampionshipDetailsState extends State<ChampionshipDetails> {
         'criteria': _criteriaController.text.trim().isNotEmpty
             ? _criteriaController.text.trim()
             : null,
-              'fee': _isFree ? 'Gratuit' : _feeController.text.trim().isNotEmpty
-            ? _criteriaController.text.trim()
+        'fee': _isFree ? 'Gratuit' : _feeController.text.trim().isNotEmpty
+            ? _feeController.text.trim()
             : null,
         'documents': _documentsController.text.trim().isNotEmpty
             ? _documentsController.text.trim()
@@ -299,6 +299,7 @@ class _ChampionshipDetailsState extends State<ChampionshipDetails> {
                 ),
               ],
             ),
+
             const SizedBox(height: 16),
             _buildSectionTitle('Lieu', Icons.place),
             DropdownButtonFormField<String>(
@@ -355,10 +356,10 @@ class _ChampionshipDetailsState extends State<ChampionshipDetails> {
             const SizedBox(height: 16),
             _buildSectionHeader('Participants'),
             _buildSectionTitle('Groupes Participants', Icons.groups),
-            _buildMultiSelect('Groupes Participants',
+            _buildMultiSelect('Groupes Participants :',
                 _childrenByGroup.keys.toList(), _selectedGroups),
             const SizedBox(height: 16),
-            Text('Joueurs sélectionnés (${_selectedChildren.length})',
+            Text('Joueurs sélectionnés : (${_selectedChildren.length})',
                 style:
                     const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             Wrap(

@@ -28,8 +28,8 @@ class _JourneeDetailsState extends State<JourneeDetails> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
-  final _transportModeController = TextEditingController();
-
+  bool _isFree = false;
+  late DateTime _date;
   final _departureTimeController = TextEditingController();
   final _feeController = TextEditingController();
   List<Map<String, dynamic>> _coaches = []; // Stores coaches with session count
@@ -43,8 +43,11 @@ class _JourneeDetailsState extends State<JourneeDetails> {
     _selectedCoaches = List<String>.from(widget.session?['coaches'] ?? []);
 
     _loadData();
-    _fetchCoaches(); // ✅ Fetch coaches and their session limits
-    _fetchChampionshipName(); // ✅ Fetch championship name when screen loads
+    _fetchCoaches().then((_) {
+       _fetchCoachSessionCountsForDate(_date); // ✅ Appel immédiat avec _date
+
+      setState(() {});
+    });    _fetchChampionshipName(); // ✅ Fetch championship name when screen loads
   }
 
   /// ✅ **Fetch Championship Name from Firestore**
@@ -73,31 +76,32 @@ class _JourneeDetailsState extends State<JourneeDetails> {
 
  void _loadData() {
   // ✅ Vérifier si une date est enregistrée et la convertir correctement
-  if (widget.journeeData.containsKey('date')) {
+   if (widget.journeeData.containsKey('date')) {
     if (widget.journeeData['date'] is Timestamp) {
-      _dateController.text = DateFormat('dd/MM/yyyy').format(
-        (widget.journeeData['date'] as Timestamp).toDate(),
-      );
+      _date = (widget.journeeData['date'] as Timestamp).toDate(); // ✅ Affecter à `_date`
     } else if (widget.journeeData['date'] is String &&
         widget.journeeData['date'].isNotEmpty) {
       try {
-        _dateController.text = DateFormat('dd/MM/yyyy').format(
-          DateTime.parse(widget.journeeData['date']),
-        );
+        _date = DateTime.parse(widget.journeeData['date']); // ✅ Convertir la date
       } catch (e) {
-        _dateController.text = ''; // ✅ S'assurer que la valeur est correcte
+        _date = DateTime.now(); // ✅ Valeur par défaut en cas d'erreur
       }
     } else {
-      _dateController.text = ''; // ✅ Valeur par défaut si vide
+      _date = DateTime.now(); // ✅ Valeur par défaut
     }
+
+    _dateController.text = DateFormat('dd/MM/yyyy').format(_date); // ✅ Mettre à jour `_dateController`
   } else {
-    _dateController.text = ''; // ✅ Valeur par défaut
+    _date = DateTime.now(); // ✅ Assurer une initialisation
+    _dateController.text = ''; // ✅ Champ vide si aucune date enregistrée
   }
 
   // ✅ Assurer que les autres champs ne sont pas nuls
   _timeController.text = widget.journeeData['time'] ?? '';
   _departureTimeController.text = widget.journeeData['departureTime'] ?? '';
-  _feeController.text = widget.journeeData['fee']?.toString() ?? '';
+ 
+    _feeController.text = !_isFree && widget.journeeData['fee'] != null ? widget.journeeData['fee'].toString() : ''; // ✅ Corrige le tarif
+    _isFree = widget.journeeData['fee'] == 'Gratuit';
 
   // ✅ Vérifier que le mode de transport est valide
   List<String> transportModes = ['Covoiturage', 'Bus', 'Individuel'];
@@ -141,132 +145,126 @@ class _JourneeDetailsState extends State<JourneeDetails> {
 
 
   Future<void> _fetchCoachSessionCountsForDate(DateTime selectedDate) async {
-    // ✅ Déterminer la semaine (du lundi au dimanche)
-    DateTime startOfWeek =
-        selectedDate.subtract(Duration(days: selectedDate.weekday - 1));
-    DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
+  // ✅ Déterminer la semaine (du lundi au dimanche)
+  DateTime startOfWeek = selectedDate.subtract(Duration(days: selectedDate.weekday - 1));
+  DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
 
-    Map<String, int> dailySessions = {};
-    Map<String, int> weeklySessions = {};
+  Map<String, int> dailySessions = {};
+  Map<String, int> weeklySessions = {};
 
-    // ✅ Liste des collections à vérifier
-    List<String> collections = [
-      'trainings',
-      'championships',
-      'friendlyMatches',
-      'tournaments'
-    ];
+  // ✅ Liste des collections à vérifier
+  List<String> collections = ['trainings', 'championships', 'friendlyMatches', 'tournaments'];
 
-    for (String collection in collections) {
-      final snapshot = await _firestore.collection(collection).get();
+  for (String collection in collections) {
+    final snapshot = await _firestore.collection(collection).get();
 
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        if (!data.containsKey('coaches')) continue;
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      if (!data.containsKey('coaches')) continue;
 
-        List<dynamic> assignedCoaches = data['coaches'];
+      List<dynamic> assignedCoaches = data['coaches'];
 
-        DateTime sessionDate = DateTime.now();
-        if (data.containsKey('date')) {
-          // ✅ Convertir la date correctement
-          if (data['date'] is Timestamp) {
-            sessionDate = (data['date'] as Timestamp).toDate();
-          } else if (data['date'] is String) {
+      DateTime sessionDate = DateTime.now();
+      if (data.containsKey('date')) {
+        // ✅ Convertir la date correctement
+        if (data['date'] is Timestamp) {
+          sessionDate = (data['date'] as Timestamp).toDate();
+        } else if (data['date'] is String) {
+          try {
+            sessionDate = DateTime.parse(data['date']);
+          } catch (e) {
+            continue;
+          }
+        } else {
+          continue;
+        }
+      } else if (collection == "championships" && data.containsKey('matchDays')) {
+        // ✅ Extraire les dates des matchs dans un championnat
+        for (var matchDay in data['matchDays']) {
+          if (matchDay is Map<String, dynamic> && matchDay.containsKey('date')) {
             try {
-              sessionDate = DateTime.parse(data['date']);
+              sessionDate = DateTime.parse(matchDay['date']);
             } catch (e) {
               continue;
             }
           } else {
             continue;
           }
-        } else if (collection == "championships" &&
-            data.containsKey('matchDays')) {
-          // ✅ Extraire les dates des matchs dans un championnat
-          for (var matchDay in data['matchDays']) {
-            if (matchDay is Map<String, dynamic> &&
-                matchDay.containsKey('date')) {
-              try {
-                sessionDate = DateTime.parse(matchDay['date']);
-              } catch (e) {
-                continue;
-              }
-            } else {
-              continue;
-            }
-          }
-        } else {
-          continue;
+        }
+      } else {
+        continue;
+      }
+
+      for (var coachId in assignedCoaches) {
+        if (coachId == null) continue;
+
+        // ✅ Vérifier si la session est aujourd'hui
+        if (sessionDate.isAtSameMomentAs(selectedDate)) {
+          dailySessions[coachId] = (dailySessions[coachId] ?? 0) + 1;
         }
 
-        for (var coachId in assignedCoaches) {
-          if (coachId == null) continue;
-
-          // ✅ Vérifier si la session est aujourd'hui
-          if (sessionDate.isAtSameMomentAs(selectedDate)) {
-            dailySessions[coachId] = (dailySessions[coachId] ?? 0) + 1;
-          }
-
-          // ✅ Vérifier si la session est cette semaine (entre lundi et dimanche)
-          if (sessionDate.isAfter(startOfWeek) &&
-              sessionDate.isBefore(endOfWeek.add(const Duration(days: 1)))) {
-            weeklySessions[coachId] = (weeklySessions[coachId] ?? 0) + 1;
-          }
+        // ✅ Vérifier si la session est cette semaine (entre lundi et dimanche)
+        if (sessionDate.isAfter(startOfWeek) && sessionDate.isBefore(endOfWeek.add(const Duration(days: 1)))) {
+          weeklySessions[coachId] = (weeklySessions[coachId] ?? 0) + 1;
         }
       }
     }
-
-    // ✅ Mettre à jour les coachs avec les sessions comptées
-    setState(() {
-      for (var coach in _coaches) {
-        String coachId = coach['id'];
-        coach['dailySessions'] = dailySessions[coachId] ?? 0;
-        coach['weeklySessions'] = weeklySessions[coachId] ?? 0;
-      }
-    });
   }
 
-  /// ✅ **UI for selecting available coaches with session count**
-  Widget _buildCoachSelection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text("Coachs disponibles",
-        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 8.0,
-          runSpacing: 4.0,
-          children: _coaches.map((coach) {
-            final isSelected = _selectedCoaches.contains(coach['id']);
-            final maxPerDay = coach['maxSessionsPerDay'];
-            final maxPerWeek = coach['maxSessionsPerWeek'];
-            final dailySessions = coach['dailySessions'];
-            final weeklySessions = coach['weeklySessions'];
-            final remainingDaily = maxPerDay - dailySessions;
-            final remainingWeekly = maxPerWeek - weeklySessions;
+  // ✅ Mettre à jour les coachs avec les sessions comptées
+  setState(() {
+    for (var coach in _coaches) {
+      String coachId = coach['id'];
+      coach['dailySessions'] = dailySessions[coachId] ?? 0;
+      coach['weeklySessions'] = weeklySessions[coachId] ?? 0;
+    }
+  });
+}
 
-            return ChoiceChip(
-              label: Text(
-                  "${coach['name']} 📅$remainingDaily/$maxPerDay 🗓️$remainingWeekly/$maxPerWeek"),
-              selected: isSelected,
-              selectedColor: Colors.blueAccent,
-              backgroundColor: Colors.grey[200],
-              onSelected: (bool selected) {
-                setState(() {
-                  if (selected) {
-                    _selectedCoaches.add(coach['id']);
-                  } else {
-                    _selectedCoaches.remove(coach['id']);
-                  }
-                });
-              },
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
+
+
+/// ✅ **UI for selecting available coaches with session count**
+Widget _buildCoachSelection() {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text("Coachs disponibles :", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+      const SizedBox(height: 10),
+      Wrap(
+        spacing: 8.0,
+        runSpacing: 4.0,
+        children: _coaches.map((coach) {
+          final isSelected = _selectedCoaches.contains(coach['id']);
+          final maxPerDay = coach['maxSessionsPerDay'];
+          final maxPerWeek = coach['maxSessionsPerWeek'];
+          final dailySessions = coach['dailySessions'];
+          final weeklySessions = coach['weeklySessions'];
+
+          final remainingDaily = maxPerDay - dailySessions;
+          final remainingWeekly = maxPerWeek - weeklySessions;
+
+          return ChoiceChip(
+            label: Text("${coach['name']} 📅$remainingDaily/$maxPerDay 🗓️$remainingWeekly/$maxPerWeek"),
+            selected: isSelected,
+            selectedColor: Colors.blueAccent,
+            backgroundColor: Colors.grey[200],
+            onSelected: (bool selected) {
+              setState(() {
+                if (selected) {
+                  _selectedCoaches.add(coach['id']);
+                } else {
+                  _selectedCoaches.remove(coach['id']);
+                }
+              });
+            },
+          );
+        }).toList(),
+      ),
+    ],
+  );
+}
+
+
 
   /// ✅ **Save "Journée" with assigned coaches**
  Future<void> _saveJournee() async {
@@ -321,8 +319,8 @@ class _JourneeDetailsState extends State<JourneeDetails> {
         ? _departureTimeController.text
         : existingDay['departureTime'];
 
-    existingDay['fee'] = _feeController.text.isNotEmpty
-        ? double.parse(_feeController.text)
+    existingDay['fee'] = _isFree ? 'Gratuit' : _feeController.text.isNotEmpty
+        ? int.tryParse(_feeController.text)
         : existingDay['fee'];
 
     // ✅ Vérifier si la liste `matchDays` est assez grande
@@ -484,16 +482,38 @@ class _JourneeDetailsState extends State<JourneeDetails> {
                       ),
               const SizedBox(height: 16),
               _buildSectionTitle('Frais de Transport (TND)', Icons.money),
-              TextFormField(
-                controller: _feeController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Frais de transport',
-                  border: OutlineInputBorder(),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _feeController,
+                    enabled: !_isFree,
+                    decoration: const InputDecoration(
+                      labelText: 'Tarif (en TND)',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.money),
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                Checkbox(
+                  value: _isFree,
+                  onChanged: (value) {
+                    setState(() {
+                      _isFree = value!;
+                      if (_isFree) {
+                        _feeController.clear();
+                      }
+                    });
+                  },
+                ),
+                const Text('Gratuit', style: TextStyle(fontSize: 16)),
+              ],
+            ),
               const SizedBox(height: 16),
             ],
+            _buildSectionTitle('Affectation des Coaches', Icons.sports),
 
             _buildCoachSelection(),
             const SizedBox(height: 16),
@@ -520,18 +540,23 @@ class _JourneeDetailsState extends State<JourneeDetails> {
   }
 
   Future<void> _pickDate() async {
-    final DateTime? pickedDate = await showDatePicker(
-      context: context,
-      firstDate: DateTime.now(),
-      lastDate: DateTime(2100),
-    );
+  final DateTime? pickedDate = await showDatePicker(
+    context: context,
+    initialDate: DateTime.now(),
+    firstDate: DateTime.now(),
+    lastDate: DateTime(2100),
+  );
 
-    if (pickedDate != null) {
-      setState(() {
-        _updateDateController(pickedDate); // ✅ Met à jour le champ de texte
-      });
-    }
+  if (pickedDate != null) {
+    setState(() {
+      _updateDateController(pickedDate); // ✅ Met à jour la date dans le champ texte
+    });
+
+    // ✅ Après mise à jour, recharger la disponibilité des coachs
+    await _fetchCoachSessionCountsForDate(pickedDate);
   }
+}
+
 
   void _updateDateController(DateTime date) {
     _dateController.text = "${date.day}/${date.month}/${date.year}";

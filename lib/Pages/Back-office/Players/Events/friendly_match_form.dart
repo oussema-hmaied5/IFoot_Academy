@@ -16,12 +16,14 @@ class FriendlyMatchForm extends StatefulWidget {
   _FriendlyMatchFormState createState() => _FriendlyMatchFormState();
 }
 
+// Optimisation de la classe _FriendlyMatchFormState
+
 class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
+  // Variables existantes, gardées identiques
   final _matchNameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _itineraryController = TextEditingController();
-  final _dateController =
-      TextEditingController(); // Controller for the date field
+  final _dateController = TextEditingController();
   final _addressController = TextEditingController();
   final _tenueController = TextEditingController();
   final _feeController = TextEditingController();
@@ -31,66 +33,85 @@ class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
     'Contre une académie',
     'Contre un groupe Ifoot'
   ];
+
+  // Variables organisées par fonctionnalité
+  // Académie
+  final Map<String, String> _selectedGroupsWithUniforms = {}; // Groupe -> Tenue
+  List<String> _selectedGroupsForAcademy = [];
+  final Map<String, List<String>> _selectedPlayersByGroup = {};
+
+  // Variables communes
   String? _matchType;
   List<String> _selectedGroups = [];
-  List<String> _selectedChildren = [];
   List<DateTime> _matchDates = [];
   String? _locationType;
-  bool _loadingGroups = true;
-  List<String> _availableGroups = [];
-  String? _transportMode;
-  String? _group1;
-  String? _group2;
-  List<Map<String, dynamic>> _coaches = []; // Stores coaches with session count
-  List<String> _selectedCoaches = []; // Selected coaches
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
   bool _isFree = false;
+
+  // Groupes
+  bool _loadingGroups = true;
+  List<String> _availableGroups = [];
+  String? _group1;
+  String? _group2;
   Map<String, String> _groupUniforms = {};
+
+  // Coachs et Joueurs
+  List<Map<String, dynamic>> _coaches = [];
+  final List<String> _selectedCoaches = [];
+  List<String> _availablePlayers = [];
+  bool _loadingPlayers = false;
+
+  // Variables obsolètes supprimées:
+  // _selectedChildren - Redondant avec les données dans _selectedPlayersByGroup
+  // _transportMode - Déplacé directement dans matchData lors de la sauvegarde
 
   @override
   void initState() {
     super.initState();
-    _fetchGroupsAndChildren();
+    // Simplification des appels d'initialisation
     _fetchGroups();
-    _fetchCoaches(); // ✅ Fetch coaches and their session limits
+    _fetchCoaches();
+
     if (widget.eventData != null) {
-      _preFillFormFields();
+      _preFillFormFields().then((_) {
+        if (_dateController.text.isNotEmpty) {
+          DateTime selectedDate =
+              DateFormat('dd/MM/yyyy').parse(_dateController.text);
+          _fetchCoachSessionCountsForDate(selectedDate);
+        }
+      });
     }
   }
 
-
-   /// ✅ **Fetch all coaches and their session counts**
+  /// ✅ **Fetch all coaches and their session counts**
   Future<void> _fetchCoaches() async {
-  
-      final snapshot = await _firestore.collection('coaches').get();
-      final allCoaches = snapshot.docs
-          .map((doc) => {
-                'id': doc.id,
-                'name': doc.data()['name'],
-                'maxSessionsPerDay': doc.data().containsKey('maxSessionsPerDay')
-                    ? doc.data()['maxSessionsPerDay']
-                    : 2,
-                'maxSessionsPerWeek':
-                    doc.data().containsKey('maxSessionsPerWeek')
-                        ? doc.data()['maxSessionsPerWeek']
-                        : 10,
-                'dailySessions': 0,
-                'weeklySessions': 0,
-              })
-          .toList();
+    final snapshot = await _firestore.collection('coaches').get();
+    final allCoaches = snapshot.docs
+        .map((doc) => {
+              'id': doc.id,
+              'name': doc.data()['name'],
+              'maxSessionsPerDay': doc.data().containsKey('maxSessionsPerDay')
+                  ? doc.data()['maxSessionsPerDay']
+                  : 2,
+              'maxSessionsPerWeek': doc.data().containsKey('maxSessionsPerWeek')
+                  ? doc.data()['maxSessionsPerWeek']
+                  : 10,
+              'dailySessions': 0,
+              'weeklySessions': 0,
+            })
+        .toList();
 
-      setState(() {
-        _coaches = allCoaches;
-      });
+    setState(() {
+      _coaches = allCoaches;
+    });
 
-      // ✅ Charger les séances en fonction de la date actuelle (ou date sélectionnée)
-      if (_dateController.text.isNotEmpty) {
-        DateTime selectedDate =
-            DateFormat('dd/MM/yyyy').parse(_dateController.text);
-        await _fetchCoachSessionCountsForDate(selectedDate);
-      }
-    
+    // ✅ Charger les séances en fonction de la date actuelle (ou date sélectionnée)
+    if (_dateController.text.isNotEmpty) {
+      DateTime selectedDate =
+          DateFormat('dd/MM/yyyy').parse(_dateController.text);
+      await _fetchCoachSessionCountsForDate(selectedDate);
+    }
   }
 
   Future<void> _fetchCoachSessionCountsForDate(DateTime selectedDate) async {
@@ -184,7 +205,7 @@ class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("Coachs disponibles",
+        const Text("Coachs disponibles :",
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         const SizedBox(height: 10),
         Wrap(
@@ -221,79 +242,189 @@ class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
     );
   }
 
+  /// Optimisation de la fonction pour charger les joueurs depuis un groupe
+  Future<void> _fetchPlayersForGroup(String groupName) async {
+    setState(() {
+      _loadingPlayers = true;
+      _availablePlayers.clear();
+    });
 
-  void _preFillFormFields() {
+    try {
+      // 1. Récupérer le document de groupe par son nom
+      final groupSnapshot = await _firestore
+          .collection('groups')
+          .where('name', isEqualTo: groupName)
+          .limit(1)
+          .get();
+
+      if (groupSnapshot.docs.isEmpty) {
+        debugPrint('Groupe non trouvé: $groupName');
+        setState(() => _loadingPlayers = false);
+        return;
+      }
+
+      // 2. Extraire les IDs des joueurs du document de groupe
+      var groupData = groupSnapshot.docs.first.data();
+      List<String> playerIds = [];
+
+      if (groupData.containsKey('players') && groupData['players'] is List) {
+        List<dynamic> playersData = groupData['players'];
+
+        // Si players est une liste d'objets avec des ids
+        if (playersData.isNotEmpty && playersData.first is Map) {
+          playerIds =
+              playersData.map((player) => player['id'].toString()).toList();
+        }
+        // Si players est directement une liste d'IDs
+        else {
+          playerIds = playersData.map((player) => player.toString()).toList();
+        }
+      }
+
+      // 3. Récupérer les noms des joueurs à partir de leurs IDs
+      List<String> playerNames = [];
+      for (String playerId in playerIds) {
+        try {
+          DocumentSnapshot childDoc =
+              await _firestore.collection('children').doc(playerId).get();
+          if (childDoc.exists) {
+            var childData = childDoc.data() as Map<String, dynamic>;
+            if (childData.containsKey('name')) {
+              playerNames.add(childData['name'] as String);
+            }
+          }
+        } catch (e) {
+          debugPrint('Erreur lors de la récupération du joueur $playerId: $e');
+        }
+      }
+
+      setState(() {
+        _availablePlayers = playerNames;
+        _loadingPlayers = false;
+      });
+
+      debugPrint('Joueurs chargés pour $groupName: ${playerNames.length}');
+    } catch (e) {
+      debugPrint('Erreur lors de la récupération des joueurs: $e');
+      setState(() => _loadingPlayers = false);
+    }
+  }
+
+  /// Optimisation de la fonction de pré-remplissage des données
+  Future<void> _preFillFormFields() async {
     if (widget.eventData == null) return;
 
+    // Extraction des données de base
+    final data = widget.eventData!;
+
     setState(() {
-      _matchType = widget.eventData!.containsKey('matchType')
-          ? widget.eventData!['matchType']
-          : null;
-      _matchNameController.text = widget.eventData!.containsKey('matchName')
-          ? widget.eventData!['matchName'] ?? ''
-          : '';
-      _descriptionController.text = widget.eventData!.containsKey('description')
-          ? widget.eventData!['description'] ?? ''
-          : '';
-      _locationType = widget.eventData!.containsKey('locationType')
-          ? widget.eventData!['locationType']
-          : null;
-      _addressController.text = widget.eventData!.containsKey('address')
-          ? widget.eventData!['address'] ?? ''
-          : '';
-      _itineraryController.text = widget.eventData!.containsKey('itinerary')
-          ? widget.eventData!['itinerary'] ?? ''
-          : '';
-      _feeController.text = widget.eventData!.containsKey('fee')
-          ? widget.eventData!['fee'] ?? ''
-          : '';
-      _tenueController.text = widget.eventData!.containsKey('tenue')
-          ? widget.eventData!['tenue'] ?? ''
-          : '';
+      // Données générales
+      _matchType = data['matchType'];
+      _matchNameController.text = data['matchName'] ?? '';
+      _descriptionController.text = data['description'] ?? '';
+      _locationType = data['locationType'];
+      _addressController.text = data['address'] ?? '';
+      _itineraryController.text = data['itinerary'] ?? '';
 
+      // Gestion des tarifs
+      _isFree = data['fee'] == 'Gratuit';
+      _feeController.text = _isFree ? '' : (data['fee'] ?? '');
 
-      _selectedGroups = widget.eventData!.containsKey('selectedGroups') &&
-              widget.eventData!['selectedGroups'] is List
-          ? List<String>.from(widget.eventData!['selectedGroups'])
-          : [];
+      // Gestion des tenues
+      _tenueController.text = data['tenue'] ?? '';
 
-      _selectedChildren = widget.eventData!.containsKey('selectedChildren') &&
-              widget.eventData!['selectedChildren'] is List
-          ? List<String>.from(widget.eventData!['selectedChildren'])
-          : [];
+      // Gestion des dates
+      if (data.containsKey('dates') && data['dates'] is List) {
+        _matchDates = (data['dates'] as List)
+            .map((date) => (date as Timestamp).toDate())
+            .toList();
 
-      _transportMode = widget.eventData!.containsKey('transportMode')
-          ? widget.eventData!['transportMode']
-          : null;
-      _isFree = widget.eventData!.containsKey('fee') &&
-          widget.eventData!['fee'] == 'Gratuit';
+        _dateController.text = _matchDates.isNotEmpty
+            ? _matchDates
+                .map((date) => DateFormat('dd/MM/yyyy').format(date))
+                .join(', ')
+            : '';
+      }
 
-      // ✅ Récupérer les équipes si "Contre un groupe Ifoot"
-      if (_matchType == 'Contre un groupe Ifoot' &&
+      // Gestion des horaires
+      if (data.containsKey('startTime')) {
+        _startTime = TimeOfDay.fromDateTime(
+            DateFormat('HH:mm').parse(data['startTime']));
+      }
+
+      if (data.containsKey('endTime')) {
+        _endTime =
+            TimeOfDay.fromDateTime(DateFormat('HH:mm').parse(data['endTime']));
+      }
+
+      // Récupération des groupes
+      if (data.containsKey('selectedGroups') &&
+          data['selectedGroups'] is List) {
+        _selectedGroups = List<String>.from(data['selectedGroups']);
+      }
+
+      // Récupération des coachs
+      if (data.containsKey('coaches') && data['coaches'] is List) {
+        _selectedCoaches.clear();
+        _selectedCoaches.addAll(List<String>.from(data['coaches']));
+      }
+
+      // Traitement spécifique selon le type de match
+      if (_matchType == 'Contre une académie') {
+        _selectedGroupsForAcademy = List<String>.from(_selectedGroups);
+
+        // Récupération des tenues par groupe
+        if (data.containsKey('uniforms') && data['uniforms'] is Map) {
+          final uniforms = data['uniforms'] as Map<String, dynamic>;
+          uniforms.forEach((group, tenue) {
+            _selectedGroupsWithUniforms[group] = tenue.toString();
+          });
+        }
+
+        // Récupération des joueurs par groupe
+        if (data.containsKey('playersByGroup') &&
+            data['playersByGroup'] is Map) {
+          final playersByGroup = data['playersByGroup'] as Map<String, dynamic>;
+          playersByGroup.forEach((group, players) {
+            if (players is List) {
+              _selectedPlayersByGroup[group] = List<String>.from(players);
+            }
+          });
+        }
+      } else if (_matchType == 'Contre un groupe Ifoot' &&
           _selectedGroups.length >= 2) {
         _group1 = _selectedGroups[0];
         _group2 = _selectedGroups[1];
-      }
 
-      // ✅ Récupérer les tenues et initialiser les TextEditingController
-      if (_matchType == 'Contre un groupe Ifoot' &&
-          widget.eventData!.containsKey('uniforms') &&
-          widget.eventData!['uniforms'] is Map<String, dynamic>) {
-        Map<String, dynamic> uniforms = widget.eventData!['uniforms'];
+        // Récupération des tenues
+        if (data.containsKey('uniforms') && data['uniforms'] is Map) {
+          Map<String, dynamic> uniforms = data['uniforms'];
+          _groupUniforms = {};
 
-        // 🔹 Correction : Assurer la conversion correcte des tenues et initialiser les contrôleurs
-        uniforms.forEach((group, tenue) {
-          if (!_uniformControllers.containsKey(group)) {
-            _uniformControllers[group] = TextEditingController();
-          }
-          _uniformControllers[group]!.text = tenue.toString();
-        });
+          uniforms.forEach((group, tenue) {
+            if (!_uniformControllers.containsKey(group)) {
+              _uniformControllers[group] = TextEditingController();
+            }
+            _uniformControllers[group]!.text = tenue.toString();
+            _groupUniforms[group] = tenue.toString();
+          });
+        }
       }
     });
-  }
 
-  Future<void> _fetchGroupsAndChildren() async {
-    setState(() {});
+    // Chargement des joueurs pour chaque groupe sélectionné
+    if (_matchType == 'Contre une académie') {
+      for (String group in _selectedGroupsForAcademy) {
+        // Seulement si les joueurs n'ont pas déjà été chargés
+        if (!_selectedPlayersByGroup.containsKey(group) ||
+            _selectedPlayersByGroup[group]!.isEmpty) {
+          await _fetchPlayersForGroup(group);
+          setState(() {
+            _selectedPlayersByGroup[group] = List.from(_availablePlayers);
+          });
+        }
+      }
+    }
   }
 
   void _updateDateController(DateTime date) {
@@ -550,19 +681,352 @@ class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
               ],
             ),
             const SizedBox(height: 16),
-            _buildSectionTitle('Selection des coaches ', Icons.person),
+
+            if (_matchType == 'Contre une académie') ...[
+              _buildAcademyGroupSelection(),
+            ],
+
+            const SizedBox(height: 16),
+            _buildSectionTitle('Selection des coaches ', Icons.sports),
 
             _buildCoachSelection(),
             const SizedBox(height: 16),
-           
+
             ElevatedButton.icon(
               onPressed: _saveMatch,
-              icon: const Icon(Icons.save),
-              label: const Text('Enregistrer'),
+              icon: const Icon(Icons.save, color: Colors.white),
+              label: const Text('Enregistrer',
+                  style: TextStyle(color: Colors.white)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color.fromARGB(255, 222, 107, 6),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _showPlayerSelectionDialog(String group) async {
+    List<String> selectedPlayers = _selectedPlayersByGroup[group] ?? [];
+
+    // Charger les joueurs pour ce groupe
+    await _fetchPlayersForGroup(group);
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: Text('Sélectionner les joueurs pour $group'),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 400,
+                child: _loadingPlayers
+                    ? const Center(child: CircularProgressIndicator())
+                    : _availablePlayers.isEmpty
+                        ? const Center(
+                            child:
+                                Text('Aucun joueur disponible dans ce groupe'))
+                        : Column(
+                            children: [
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 8.0),
+                                child: Text(
+                                    '${_availablePlayers.length} joueurs disponibles',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold)),
+                              ),
+                              Expanded(
+                                child: ListView.builder(
+                                  shrinkWrap: true,
+                                  itemCount: _availablePlayers.length,
+                                  itemBuilder: (context, index) {
+                                    final player = _availablePlayers[index];
+                                    return CheckboxListTile(
+                                      title: Text(player),
+                                      value: selectedPlayers.contains(player),
+                                      onChanged: (value) {
+                                        setStateDialog(() {
+                                          if (value == true) {
+                                            selectedPlayers.add(player);
+                                          } else {
+                                            selectedPlayers.remove(player);
+                                          }
+                                        });
+                                      },
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Annuler'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    // Sauvegarder les joueurs sélectionnés pour ce groupe
+                    setState(() {
+                      _selectedPlayersByGroup[group] = selectedPlayers;
+                    });
+                    Navigator.pop(context);
+                  },
+                  child: Text('Valider (${selectedPlayers.length})'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildAcademyGroupSelection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Placer le titre et le bouton dans une Row
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            //   Utiliser Flexible pour permettre au titre de se rétrécir si nécessaire
+            Flexible(
+              child: _buildSectionTitle(
+                  'Groupes participant ', Icons.group),
+            ),
+            const SizedBox(width: 8),
+
+            ElevatedButton.icon(
+              icon: const Icon(Icons.add, color: Color.fromARGB(255, 230, 10, 10)),
+label: const Text('Ajouter', 
+              style: TextStyle(color: Color.fromARGB(255, 175, 44, 44)),
+              // Réduire la taille du texte si nécessaire
+              overflow: TextOverflow.ellipsis,
+            ),              style: ElevatedButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              onPressed: () {
+                _showGroupSelectionDialog();
+              },
+            ),
+          ],
+        ),
+
+        if (_selectedGroupsForAcademy.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12.0),
+            child: Text(
+                "Aucun groupe sélectionné. Ajoutez des groupes pour participer au match."),
+          ),
+
+        // Affichage des cartes pour chaque groupe (enlever le bouton dans la carte)
+        ..._selectedGroupsForAcademy.map((group) {
+          final playersCount = _selectedPlayersByGroup[group]?.length ?? 0;
+
+          // Créer un contrôleur pour la tenue s'il n'existe pas déjà
+          if (!_uniformControllers.containsKey(group)) {
+            _uniformControllers[group] = TextEditingController(
+                text: _selectedGroupsWithUniforms[group] ?? '');
+          } else {
+            // Mettre à jour le texte du contrôleur existant si nécessaire
+            _uniformControllers[group]!.text =
+                _selectedGroupsWithUniforms[group] ?? '';
+          }
+
+          return Card(
+            margin: const EdgeInsets.only(bottom: 16),
+            elevation: 2,
+            color: Colors
+                .deepPurple.shade50, // Couleur de fond légèrement violette
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: Colors.deepPurple.shade200, width: 1),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "Groupe: $group",
+                        style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepPurple),
+                      ),
+                      Row(
+                        children: [
+                          Badge(
+                            backgroundColor: Colors.deepPurple,
+                            label: Text('$playersCount',
+                                style: const TextStyle(color: Colors.white)),
+                            child: IconButton(
+                              icon: const Icon(Icons.people,
+                                  color: Colors.deepPurple),
+                              tooltip: 'Sélectionner des joueurs',
+                              onPressed: () {
+                                _showPlayerSelectionDialog(group);
+                              },
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            tooltip: 'Supprimer le groupe',
+                            onPressed: () {
+                              setState(() {
+                                _selectedGroupsForAcademy.remove(group);
+                                _selectedGroupsWithUniforms.remove(group);
+                                _selectedPlayersByGroup.remove(group);
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _uniformControllers[group],
+                    decoration: const InputDecoration(
+                      labelText: 'Tenue pour ce groupe',
+                      border: OutlineInputBorder(),
+                      prefixIcon:
+                          Icon(Icons.checkroom, color: Colors.deepPurple),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.deepPurple),
+                      ),
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedGroupsWithUniforms[group] = value;
+                      });
+                    },
+                  ),
+                  // Afficher les joueurs sélectionnés
+                  if (_selectedPlayersByGroup.containsKey(group) &&
+                      _selectedPlayersByGroup[group]!.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Text("Joueurs sélectionnés:",
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepPurple)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: _selectedPlayersByGroup[group]!.map((player) {
+                        return Chip(
+                          backgroundColor: Colors.deepPurple.shade100,
+                          avatar: const CircleAvatar(
+                            backgroundColor: Colors.deepPurple,
+                            child: Icon(Icons.person,
+                                size: 14, color: Colors.white),
+                          ),
+                          label: Text(player),
+                          deleteIcon: const Icon(Icons.close, size: 14),
+                          onDeleted: () {
+                            setState(() {
+                              _selectedPlayersByGroup[group]!.remove(player);
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ]
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  Future<void> _showGroupSelectionDialog() async {
+    String? selectedGroup;
+    List<String> availableGroupsToSelect = _availableGroups
+        .where((group) => !_selectedGroupsForAcademy.contains(group))
+        .toList();
+
+    if (availableGroupsToSelect.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Tous les groupes ont déjà été ajoutés!')));
+      return;
+    }
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          // Utiliser StatefulBuilder pour gérer l'état interne du dialogue
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Sélectionner un groupe'),
+              content: DropdownButton<String>(
+                value: selectedGroup,
+                hint: const Text('Choisissez un groupe'),
+                isExpanded: true,
+                items: availableGroupsToSelect.map((group) {
+                  return DropdownMenuItem(
+                    value: group,
+                    child: Text(group),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setDialogState(() {
+                    // Utiliser setDialogState pour mettre à jour l'état du dialogue
+                    selectedGroup = value;
+                  });
+                },
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Annuler'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (selectedGroup != null) {
+                      // Charger les joueurs pour ce groupe
+                      await _fetchPlayersForGroup(selectedGroup!);
+
+                      setState(() {
+                        _selectedGroupsForAcademy.add(selectedGroup!);
+                        _selectedGroupsWithUniforms[selectedGroup!] =
+                            ''; // Initialize uniform
+                        _uniformControllers[selectedGroup!] =
+                            TextEditingController(); // Créer un contrôleur
+                        _selectedPlayersByGroup[selectedGroup!] =
+                            List.from(_availablePlayers);
+                      });
+                      Navigator.pop(context);
+                    }
+                  },
+                  child: const Text('Ajouter'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -665,6 +1129,9 @@ class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
         _matchDates = [pickedDate]; // ✅ Stocke uniquement UNE date
         _updateDateController(pickedDate); // ✅ Met à jour le champ de texte
       });
+
+      // ✅ Fetch coach session counts for the selected date
+      await _fetchCoachSessionCountsForDate(pickedDate);
     }
   }
 
@@ -708,93 +1175,133 @@ class _FriendlyMatchFormState extends State<FriendlyMatchForm> {
     );
   }
 
+  /// Optimisation de la fonction de sauvegarde
   Future<void> _saveMatch() async {
-    // ✅ Mise à jour des uniformes avant d'envoyer à Firebase
-    _groupUniforms = _uniformControllers.map((group, controller) {
-      return MapEntry(group, controller.text.trim());
-    });
-
-    if (_matchType == 'Contre un groupe Ifoot') {
-      _selectedGroups = [];
-      if (_group1 != null) _selectedGroups.add(_group1!);
-      if (_group2 != null) _selectedGroups.add(_group2!);
-
-      // 🔹 Vérification que les tenues sont bien saisies
-      if (_groupUniforms[_group1] == null ||
-          _groupUniforms[_group1]!.isEmpty ||
-          _groupUniforms[_group2] == null ||
-          _groupUniforms[_group2]!.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Veuillez saisir la tenue pour chaque équipe.')),
-        );
-        return;
-      }
+    // Validation de base
+    if (_matchType == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Veuillez sélectionner un type de match')));
+      return;
     }
 
-    final matchData = {
+    if (_matchDates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Veuillez sélectionner une date')));
+      return;
+    }
+
+    // Préparation des données de base du match
+    Map<String, dynamic> matchData = {
       'matchType': _matchType,
       'description': _descriptionController.text.trim(),
       'locationType': _locationType,
-      'fee': _isFree ? '0' : _feeController.text.trim(),
+      'fee': _isFree ? 'Gratuit' : _feeController.text.trim(),
       'dates': _matchDates.map((date) => Timestamp.fromDate(date)).toList(),
-      'selectedGroups': _selectedGroups,
-      'selectedChildren':
-          _matchType == 'Contre une académie' ? _selectedChildren : [],
-      'transportMode': _locationType == 'Ifoot' ? null : _transportMode,
-      'startTime': _startTime?.format(context),
-      'endTime': _endTime?.format(context),
       'coaches': _selectedCoaches,
-      'tenue': _tenueController.text.trim(),
-      'uniforms': _groupUniforms, // ✅ Sauvegarde correcte des uniformes
     };
 
+    // Ajout des horaires s'ils sont définis
+    if (_startTime != null) matchData['startTime'] = _formatTime24(_startTime!);
+    if (_endTime != null) matchData['endTime'] = _formatTime24(_endTime!);
+
+    // Traitement spécifique selon le type de match
     if (_matchType == 'Contre une académie') {
+      // Validation pour match contre académie
+      if (_matchNameController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Veuillez saisir le nom de l\'académie')));
+        return;
+      }
+
+      if (_selectedGroupsForAcademy.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Veuillez sélectionner au moins un groupe')));
+        return;
+      }
+
       matchData['matchName'] = _matchNameController.text.trim();
+      matchData['selectedGroups'] = _selectedGroupsForAcademy;
+
+      // Vérification et ajout des tenues
+      Map<String, String> uniforms = {};
+      for (String group in _selectedGroupsForAcademy) {
+        String tenue = _selectedGroupsWithUniforms[group] ?? '';
+        if (tenue.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content:
+                  Text('Veuillez définir une tenue pour le groupe $group')));
+          return;
+        }
+        uniforms[group] = tenue;
+      }
+      matchData['uniforms'] = uniforms;
+
+      // Ajout des joueurs par groupe
+      matchData['playersByGroup'] = _selectedPlayersByGroup;
+
+      // Création d'une liste plate de tous les joueurs sélectionnés
+      List<String> allSelectedPlayers = [];
+      _selectedPlayersByGroup.forEach((_, players) {
+        allSelectedPlayers.addAll(players);
+      });
+      matchData['selectedChildren'] = allSelectedPlayers;
+    } else if (_matchType == 'Contre un groupe Ifoot') {
+      // Validation pour match entre groupes Ifoot
+      if (_group1 == null || _group2 == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Veuillez sélectionner deux groupes')));
+        return;
+      }
+
+      // Mise à jour des uniformes depuis les contrôleurs
+      Map<String, String> uniforms = {};
+      for (String group in [_group1!, _group2!]) {
+        String tenue = _uniformControllers[group]?.text.trim() ?? '';
+        if (tenue.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content:
+                  Text('Veuillez définir une tenue pour le groupe $group')));
+          return;
+        }
+        uniforms[group] = tenue;
+      }
+
+      matchData['selectedGroups'] = [_group1!, _group2!];
+      matchData['uniforms'] = uniforms;
     }
 
-    if (_matchType == 'Contre un groupe Ifoot') {
-      matchData['uniforms'] = {
-        _group1!: _groupUniforms[_group1] ?? '',
-        _group2!: _groupUniforms[_group2] ?? '',
-      };
-    }
-
+    // Informations de localisation si en extérieur
     if (_locationType == 'Extérieur') {
       matchData['address'] = _addressController.text.trim();
       matchData['itinerary'] = _itineraryController.text.trim();
     }
 
     try {
-      // ✅ Vérification de l'ID de l'événement
       final String? eventId = widget.eventData?['id'];
 
       if (eventId != null && eventId.isNotEmpty) {
-        // ✅ Mettre à jour l'événement existant
         await _firestore
             .collection('friendlyMatches')
             .doc(eventId)
             .update(matchData);
+
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Match mis à jour avec succès!')),
-        );
+            const SnackBar(content: Text('Match mis à jour avec succès!')));
       } else {
-        // ✅ Créer un nouvel événement si l'ID n'existe pas
         DocumentReference newEvent =
             await _firestore.collection('friendlyMatches').add(matchData);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Match enregistré avec succès!')),
-        );
 
-        // 🔹 Ajouter l'ID généré au document pour éviter ce bug à l'avenir
         await newEvent.update({'id': newEvent.id});
+
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Match enregistré avec succès!')));
       }
 
       Navigator.pop(context);
     } catch (e) {
+      debugPrint('Erreur lors de l\'enregistrement: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur lors de l\'enregistrement: $e')),
-      );
+          SnackBar(content: Text('Erreur lors de l\'enregistrement: $e')));
     }
   }
 }

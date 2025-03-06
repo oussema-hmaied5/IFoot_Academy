@@ -31,7 +31,6 @@ class _TournamentFormState extends State<TournamentForm> {
 
   String? _locationType;
   bool _isFree = false;
-  List<DateTime> _tournamentDates = [];
   List<String> _selectedGroups = [];
   List<String> _selectedChildren = [];
   final _dateController = TextEditingController();
@@ -52,158 +51,169 @@ class _TournamentFormState extends State<TournamentForm> {
     if (widget.tournament != null) {
       _loadTournamentData(widget.tournament!);
     }
- 
   }
 
   Future<void> _fetchCoaches() async {
     try {
       final snapshot = await _firestore.collection('coaches').get();
-      final allCoaches = snapshot.docs.map((doc) => {
-        'id': doc.id,
-        'name': doc.data()['name'],
-        'maxSessionsPerDay': doc.data().containsKey('maxSessionsPerDay')
-            ? doc.data()['maxSessionsPerDay']
-            : 2,
-        'maxSessionsPerWeek': doc.data().containsKey('maxSessionsPerWeek')
-            ? doc.data()['maxSessionsPerWeek']
-            : 10,
-      }).toList();
+      final allCoaches = snapshot.docs
+          .map((doc) => {
+                'id': doc.id,
+                'name': doc.data()['name'],
+                'maxSessionsPerDay': doc.data().containsKey('maxSessionsPerDay')
+                    ? doc.data()['maxSessionsPerDay']
+                    : 2,
+                'maxSessionsPerWeek':
+                    doc.data().containsKey('maxSessionsPerWeek')
+                        ? doc.data()['maxSessionsPerWeek']
+                        : 10,
+              })
+          .toList();
 
       setState(() {
         _coaches = allCoaches;
       });
-  // ✅ Charger les séances en fonction de la date actuelle (ou date sélectionnée)
-    if (_dateController.text.isNotEmpty) {
-      DateTime selectedDate = DateFormat('dd/MM/yyyy').parse(_dateController.text);
-      await _fetchCoachSessionCounts(selectedDate);
-    }
+      // ✅ Charger les séances en fonction de la date actuelle (ou date sélectionnée)
+      if (_dateController.text.isNotEmpty) {
+        DateTime selectedDate =
+            DateFormat('dd/MM/yyyy').parse(_dateController.text);
+        await _fetchCoachSessionCounts(selectedDate);
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur lors de la récupération des coachs: $e')),
+        SnackBar(
+            content: Text('Erreur lors de la récupération des coachs: $e')),
       );
     }
   }
 
+  Future<void> _fetchCoachSessionCounts(DateTime selectedDate) async {
+    // ✅ Déterminer la semaine (du lundi au dimanche)
+    DateTime startOfWeek =
+        selectedDate.subtract(Duration(days: selectedDate.weekday - 1));
+    DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
 
-Future<void> _fetchCoachSessionCounts(DateTime selectedDate) async {
-  // ✅ Déterminer la semaine (du lundi au dimanche)
-  DateTime startOfWeek = selectedDate.subtract(Duration(days: selectedDate.weekday - 1));
-  DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
+    Map<String, int> dailySessions = {};
+    Map<String, int> weeklySessions = {};
 
-  Map<String, int> dailySessions = {};
-  Map<String, int> weeklySessions = {};
+    // ✅ Liste des collections à vérifier
+    List<String> collections = [
+      'trainings',
+      'championships',
+      'friendlyMatches',
+      'tournaments'
+    ];
 
-  // ✅ Liste des collections à vérifier
-  List<String> collections = ['trainings', 'championships', 'friendlyMatches', 'tournaments'];
+    for (String collection in collections) {
+      final snapshot = await _firestore.collection(collection).get();
 
-  for (String collection in collections) {
-    final snapshot = await _firestore.collection(collection).get();
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        if (!data.containsKey('coaches')) continue;
 
-    for (var doc in snapshot.docs) {
-      final data = doc.data();
-      if (!data.containsKey('coaches')) continue;
+        List<dynamic> assignedCoaches = data['coaches'];
 
-      List<dynamic> assignedCoaches = data['coaches'];
-
-      DateTime sessionDate = DateTime.now();
-      if (data.containsKey('date')) {
-        // ✅ Convertir la date correctement
-        if (data['date'] is Timestamp) {
-          sessionDate = (data['date'] as Timestamp).toDate();
-        } else if (data['date'] is String) {
-          try {
-            sessionDate = DateTime.parse(data['date']);
-          } catch (e) {
-            continue;
-          }
-        } else {
-          continue;
-        }
-      } else if (collection == "championships" && data.containsKey('matchDays')) {
-        // ✅ Extraire les dates des matchs dans un championnat
-        for (var matchDay in data['matchDays']) {
-          if (matchDay is Map<String, dynamic> && matchDay.containsKey('date')) {
+        DateTime sessionDate = DateTime.now();
+        if (data.containsKey('date')) {
+          // ✅ Convertir la date correctement
+          if (data['date'] is Timestamp) {
+            sessionDate = (data['date'] as Timestamp).toDate();
+          } else if (data['date'] is String) {
             try {
-              sessionDate = DateTime.parse(matchDay['date']);
+              sessionDate = DateTime.parse(data['date']);
             } catch (e) {
               continue;
             }
           } else {
             continue;
           }
+        } else if (collection == "championships" &&
+            data.containsKey('matchDays')) {
+          // ✅ Extraire les dates des matchs dans un championnat
+          for (var matchDay in data['matchDays']) {
+            if (matchDay is Map<String, dynamic> &&
+                matchDay.containsKey('date')) {
+              try {
+                sessionDate = DateTime.parse(matchDay['date']);
+              } catch (e) {
+                continue;
+              }
+            } else {
+              continue;
+            }
+          }
+        } else {
+          continue;
         }
-      } else {
-        continue;
-      }
 
-      for (var coachId in assignedCoaches) {
-        if (coachId == null) continue;
+        for (var coachId in assignedCoaches) {
+          if (coachId == null) continue;
 
-        // ✅ Vérifier si la session est aujourd'hui
-        if (sessionDate.isAtSameMomentAs(selectedDate)) {
-          dailySessions[coachId] = (dailySessions[coachId] ?? 0) + 1;
-        }
+          // ✅ Vérifier si la session est aujourd'hui
+          if (sessionDate.isAtSameMomentAs(selectedDate)) {
+            dailySessions[coachId] = (dailySessions[coachId] ?? 0) + 1;
+          }
 
-        // ✅ Vérifier si la session est cette semaine (entre lundi et dimanche)
-        if (sessionDate.isAfter(startOfWeek) && sessionDate.isBefore(endOfWeek.add(const Duration(days: 1)))) {
-          weeklySessions[coachId] = (weeklySessions[coachId] ?? 0) + 1;
+          // ✅ Vérifier si la session est cette semaine (entre lundi et dimanche)
+          if (sessionDate.isAfter(startOfWeek) &&
+              sessionDate.isBefore(endOfWeek.add(const Duration(days: 1)))) {
+            weeklySessions[coachId] = (weeklySessions[coachId] ?? 0) + 1;
+          }
         }
       }
     }
+
+    // ✅ Mettre à jour les coachs avec les sessions comptées
+    setState(() {
+      for (var coach in _coaches) {
+        String coachId = coach['id'];
+        coach['dailySessions'] = dailySessions[coachId] ?? 0;
+        coach['weeklySessions'] = weeklySessions[coachId] ?? 0;
+      }
+    });
   }
 
-  // ✅ Mettre à jour les coachs avec les sessions comptées
-  setState(() {
-    for (var coach in _coaches) {
-      String coachId = coach['id'];
-      coach['dailySessions'] = dailySessions[coachId] ?? 0;
-      coach['weeklySessions'] = weeklySessions[coachId] ?? 0;
-    }
-  });
-}
+  Widget _buildCoachSelection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text("Coachs disponibles :",
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8.0,
+          runSpacing: 4.0,
+          children: _coaches.map((coach) {
+            final isSelected = _selectedCoaches.contains(coach['id']);
+            final maxPerDay = (coach['maxSessionsPerDay'] ?? 2);
+            final maxPerWeek = (coach['maxSessionsPerWeek'] ?? 10);
+            final dailySessions = (coach['dailySessions'] ?? 0);
+            final weeklySessions = (coach['weeklySessions'] ?? 0);
 
+            final remainingDaily = maxPerDay - dailySessions;
+            final remainingWeekly = maxPerWeek - weeklySessions;
 
-Widget _buildCoachSelection() {
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const Text("Coachs disponibles", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-      const SizedBox(height: 10),
-      Wrap(
-        spacing: 8.0,
-        runSpacing: 4.0,
-        children: _coaches.map((coach) {
-          final isSelected = _selectedCoaches.contains(coach['id']);
-          final maxPerDay = (coach['maxSessionsPerDay'] ?? 2);
-          final maxPerWeek = (coach['maxSessionsPerWeek'] ?? 10);
-          final dailySessions = (coach['dailySessions'] ?? 0);
-          final weeklySessions = (coach['weeklySessions'] ?? 0);
-
-          final remainingDaily = maxPerDay - dailySessions;
-          final remainingWeekly = maxPerWeek - weeklySessions;
-
-          return ChoiceChip(
-            label: Text("${coach['name']} 📅$remainingDaily/$maxPerDay 🗓️$remainingWeekly/$maxPerWeek"),
-            selected: isSelected,
-            selectedColor: Colors.blueAccent,
-            backgroundColor: Colors.grey[200],
-            onSelected: (bool selected) {
-              setState(() {
-                if (selected) {
-                  _selectedCoaches.add(coach['id']);
-                } else {
-                  _selectedCoaches.remove(coach['id']);
-                }
-              });
-            },
-          );
-        }).toList(),
-      ),
-    ],
-  );
-}
-
-
+            return ChoiceChip(
+              label: Text(
+                  "${coach['name']} 📅$remainingDaily/$maxPerDay 🗓️$remainingWeekly/$maxPerWeek"),
+              selected: isSelected,
+              selectedColor: Colors.blueAccent,
+              backgroundColor: Colors.grey[200],
+              onSelected: (bool selected) {
+                setState(() {
+                  if (selected) {
+                    _selectedCoaches.add(coach['id']);
+                  } else {
+                    _selectedCoaches.remove(coach['id']);
+                  }
+                });
+              },
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
 
   Future<void> _fetchGroupsAndChildren() async {
     final groupsSnapshot = await _firestore.collection('groups').get();
@@ -223,21 +233,39 @@ Widget _buildCoachSelection() {
 
   void _loadTournamentData(DocumentSnapshot<Object?> tournament) {
     final data = tournament.data() as Map<String, dynamic>;
+
     _nameController.text = data['name'] ?? '';
+    _dateController.text =
+        data['dates'] is List ? data['dates'].join(', ') : data['dates'] ?? '';
     _descriptionController.text = data['description'] ?? '';
     _locationType = data['locationType'];
     _addressController.text = data['address'] ?? '';
     _itineraryController.text = data['itinerary'] ?? '';
     _feeController.text = data['fee'] ?? '';
     _isFree = data['fee'] == 'Gratuit';
+
     _tenueController.text = data['tenue'] ?? '';
     _documentsController.text = data['documents'] ?? '';
-    _tournamentDates = (data['dates'] as List)
-        .map((date) => date is Timestamp ? date.toDate() : DateTime.parse(date))
-        .toList();
-    _selectedGroups = List<String>.from(data['selectedGroups'] ?? []);
-    _selectedChildren = List<String>.from(data['selectedChildren'] ?? []);
     _transportMode = data['transportMode'];
+
+
+    // ✅ Vérifier `selectedGroups` et `selectedChildren`
+    _selectedGroups = (data['selectedGroups'] is List)
+        ? List<String>.from(data['selectedGroups'])
+        : [];
+
+    _selectedChildren = (data['selectedChildren'] is List)
+        ? List<String>.from(data['selectedChildren'])
+        : [];
+
+
+ // ✅ Charger les coachs sélectionnés
+  _selectedCoaches.clear();
+  if (data['coaches'] is List) {
+    _selectedCoaches.addAll(List<String>.from(data['coaches']));
+  }
+
+    setState(() {});
   }
 
   Widget _buildSectionTitle(String title, IconData icon) {
@@ -315,8 +343,6 @@ Widget _buildCoachSelection() {
     );
   }
 
- 
-
   @override
   Widget build(BuildContext context) {
     return TemplatePageBack(
@@ -339,7 +365,7 @@ Widget _buildCoachSelection() {
             ),
             const SizedBox(height: 16),
             _buildSectionTitle('Date du Tournoi', Icons.date_range),
-              TextField(
+            TextField(
               controller: _dateController,
               readOnly: true,
               decoration: const InputDecoration(
@@ -358,11 +384,11 @@ Widget _buildCoachSelection() {
                     _dateController.text =
                         DateFormat('dd/MM/yyyy').format(pickedDate);
                   });
-                await _fetchCoachSessionCounts(pickedDate);
-
+                  await _fetchCoachSessionCounts(pickedDate);
                 }
               },
-            ),            const SizedBox(height: 16),
+            ),
+            const SizedBox(height: 16),
             _buildSectionTitle('Lieu et Itinéraire', Icons.place),
             DropdownButtonFormField<String>(
               value: _locationType,
@@ -387,30 +413,30 @@ Widget _buildCoachSelection() {
                 ),
               ),
               const SizedBox(height: 8),
-             Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _itineraryController,
-                          readOnly: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Itinéraire',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _itineraryController,
+                      readOnly: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Itinéraire',
+                        border: OutlineInputBorder(),
                       ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8.0),
-                          ),
-                        ),
-                        onPressed: _selectItinerary,
-                        child: const Text('Choisir sur la carte'),
-                      ),
-                    ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8.0),
+                      ),
+                    ),
+                    onPressed: _selectItinerary,
+                    child: const Text('Choisir sur la carte'),
+                  ),
+                ],
+              ),
               const SizedBox(height: 16),
               _buildSectionTitle('Transport', Icons.directions_bus),
               DropdownButtonFormField<String>(
@@ -490,8 +516,12 @@ Widget _buildCoachSelection() {
               maxLines: 3,
             ),
             const SizedBox(height: 16),
+              _buildSectionTitle('Groupes Participants', Icons.groups),
+
             _buildGroupAndChildrenSelection(),
             const SizedBox(height: 16),
+            _buildSectionTitle('Affectation des Coaches', Icons.sports),
+
             _buildCoachSelection(),
             const SizedBox(height: 16),
             ElevatedButton.icon(
@@ -505,8 +535,8 @@ Widget _buildCoachSelection() {
       ),
     );
   }
-  
-Future<void> _selectItinerary() async {
+
+  Future<void> _selectItinerary() async {
     try {
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -548,13 +578,11 @@ Future<void> _selectItinerary() async {
       'fee': _isFree ? 'Gratuit' : _feeController.text.trim(),
       'tenue': _tenueController.text.trim(),
       'documents': _documentsController.text.trim(),
-      'dates': _tournamentDates
-          .map((date) => Timestamp.fromDate(date))
-          .toList(), // ✅ Store as Timestamp
+      'dates':
+          _dateController.text.split(',').map((date) => date.trim()).toList(),
       'selectedGroups': _selectedGroups,
       'selectedChildren': _selectedChildren,
       'coaches': _selectedCoaches,
-
       'transportMode': _transportMode,
     };
 
