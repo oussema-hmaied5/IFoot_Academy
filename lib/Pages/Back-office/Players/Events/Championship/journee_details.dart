@@ -2,6 +2,7 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:ifoot_academy/Pages/Back-office/Coach/coach_service.dart';
 import 'package:ifoot_academy/Pages/Back-office/backend_template.dart';
 import 'package:intl/intl.dart';
 
@@ -26,14 +27,16 @@ class JourneeDetails extends StatefulWidget {
 
 class _JourneeDetailsState extends State<JourneeDetails> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final _coachService = CoachService(); // Utilisation du service de coach
+
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
   bool _isFree = false;
   late DateTime _date;
   final _departureTimeController = TextEditingController();
   final _feeController = TextEditingController();
-  List<Map<String, dynamic>> _coaches = []; // Stores coaches with session count
-  List<String> _selectedCoaches = []; // Selected coaches
+  List<Map<String, dynamic>> _coaches = []; // Coachs avec leurs sessions
+  List<String> _selectedCoaches = []; // Coachs sélectionnés
   String? _selectedTransportMode;
   String? _championshipName;
 
@@ -43,14 +46,37 @@ class _JourneeDetailsState extends State<JourneeDetails> {
     _selectedCoaches = List<String>.from(widget.session?['coaches'] ?? []);
 
     _loadData();
-    _fetchCoaches().then((_) {
-       _fetchCoachSessionCountsForDate(_date); // ✅ Appel immédiat avec _date
-
-      setState(() {});
-    });    _fetchChampionshipName(); // ✅ Fetch championship name when screen loads
+    _loadCoachesData();
+    _fetchChampionshipName();
   }
 
-  /// ✅ **Fetch Championship Name from Firestore**
+  /// Charge les données des coachs avec leur disponibilité
+  Future<void> _loadCoachesData() async {
+    try {
+      if (_dateController.text.isNotEmpty) {
+        DateTime selectedDate =
+            DateFormat('dd/MM/yyyy').parse(_dateController.text);
+
+        // Utiliser le service coach pour obtenir les coachs avec leur comptage de sessions
+        final coachesWithSessions =
+            await _coachService.getCoachesWithSessionCounts(selectedDate);
+
+        setState(() {
+          _coaches = coachesWithSessions;
+        });
+      } else {
+        // Si pas de date, charger tous les coachs sans compter les sessions
+        final allCoaches = await _coachService.fetchAllCoaches();
+        setState(() {
+          _coaches = allCoaches;
+        });
+      }
+    } catch (e) {
+      debugPrint("Erreur lors du chargement des coachs: $e");
+    }
+  }
+
+  /// Récupère le nom du championnat depuis Firestore
   Future<void> _fetchChampionshipName() async {
     try {
       DocumentSnapshot snapshot = await _firestore
@@ -74,277 +100,171 @@ class _JourneeDetailsState extends State<JourneeDetails> {
     }
   }
 
- void _loadData() {
-  // ✅ Vérifier si une date est enregistrée et la convertir correctement
-   if (widget.journeeData.containsKey('date')) {
-    if (widget.journeeData['date'] is Timestamp) {
-      _date = (widget.journeeData['date'] as Timestamp).toDate(); // ✅ Affecter à `_date`
-    } else if (widget.journeeData['date'] is String &&
-        widget.journeeData['date'].isNotEmpty) {
-      try {
-        _date = DateTime.parse(widget.journeeData['date']); // ✅ Convertir la date
-      } catch (e) {
-        _date = DateTime.now(); // ✅ Valeur par défaut en cas d'erreur
-      }
-    } else {
-      _date = DateTime.now(); // ✅ Valeur par défaut
-    }
-
-    _dateController.text = DateFormat('dd/MM/yyyy').format(_date); // ✅ Mettre à jour `_dateController`
-  } else {
-    _date = DateTime.now(); // ✅ Assurer une initialisation
-    _dateController.text = ''; // ✅ Champ vide si aucune date enregistrée
-  }
-
-  // ✅ Assurer que les autres champs ne sont pas nuls
-  _timeController.text = widget.journeeData['time'] ?? '';
-  _departureTimeController.text = widget.journeeData['departureTime'] ?? '';
- 
-    _feeController.text = !_isFree && widget.journeeData['fee'] != null ? widget.journeeData['fee'].toString() : ''; // ✅ Corrige le tarif
-    _isFree = widget.journeeData['fee'] == 'Gratuit';
-
-  // ✅ Vérifier que le mode de transport est valide
-  List<String> transportModes = ['Covoiturage', 'Bus', 'Individuel'];
-  _selectedTransportMode = transportModes.contains(widget.journeeData['transportMode'])
-      ? widget.journeeData['transportMode']
-      : transportModes.first;
-}
-
-
-  /// ✅ **Fetch all coaches and their session counts**
- Future<void> _fetchCoaches() async {
-  final snapshot = await _firestore.collection('coaches').get();
-  final allCoaches = snapshot.docs
-      .map((doc) => {
-            'id': doc.id,
-            'name': doc.data()['name'],
-            'maxSessionsPerDay': doc.data().containsKey('maxSessionsPerDay')
-                ? doc.data()['maxSessionsPerDay']
-                : 2,
-            'maxSessionsPerWeek':
-                doc.data().containsKey('maxSessionsPerWeek')
-                    ? doc.data()['maxSessionsPerWeek']
-                    : 10,
-            'dailySessions': 0,
-            'weeklySessions': 0,
-          })
-      .toList();
-
-  setState(() {
-    _coaches = allCoaches;
-    _selectedCoaches = List<String>.from(widget.journeeData['coaches'] ?? []);
-  });
-
-  // ✅ Charger les séances en fonction de la date actuelle (ou date sélectionnée)
-  if (_dateController.text.isNotEmpty) {
-    DateTime selectedDate =
-        DateFormat('dd/MM/yyyy').parse(_dateController.text);
-    await _fetchCoachSessionCountsForDate(selectedDate);
-  }
-}
-
-
-  Future<void> _fetchCoachSessionCountsForDate(DateTime selectedDate) async {
-  // ✅ Déterminer la semaine (du lundi au dimanche)
-  DateTime startOfWeek = selectedDate.subtract(Duration(days: selectedDate.weekday - 1));
-  DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
-
-  Map<String, int> dailySessions = {};
-  Map<String, int> weeklySessions = {};
-
-  // ✅ Liste des collections à vérifier
-  List<String> collections = ['trainings', 'championships', 'friendlyMatches', 'tournaments'];
-
-  for (String collection in collections) {
-    final snapshot = await _firestore.collection(collection).get();
-
-    for (var doc in snapshot.docs) {
-      final data = doc.data();
-      if (!data.containsKey('coaches')) continue;
-
-      List<dynamic> assignedCoaches = data['coaches'];
-
-      DateTime sessionDate = DateTime.now();
-      if (data.containsKey('date')) {
-        // ✅ Convertir la date correctement
-        if (data['date'] is Timestamp) {
-          sessionDate = (data['date'] as Timestamp).toDate();
-        } else if (data['date'] is String) {
-          try {
-            sessionDate = DateTime.parse(data['date']);
-          } catch (e) {
-            continue;
-          }
-        } else {
-          continue;
-        }
-      } else if (collection == "championships" && data.containsKey('matchDays')) {
-        // ✅ Extraire les dates des matchs dans un championnat
-        for (var matchDay in data['matchDays']) {
-          if (matchDay is Map<String, dynamic> && matchDay.containsKey('date')) {
-            try {
-              sessionDate = DateTime.parse(matchDay['date']);
-            } catch (e) {
-              continue;
-            }
-          } else {
-            continue;
-          }
+  /// Charge les données initiales du formulaire
+  void _loadData() {
+    // Gestion de la date
+    if (widget.journeeData.containsKey('date')) {
+      if (widget.journeeData['date'] is Timestamp) {
+        _date = (widget.journeeData['date'] as Timestamp).toDate();
+      } else if (widget.journeeData['date'] is String &&
+          widget.journeeData['date'].isNotEmpty) {
+        try {
+          _date = DateTime.parse(widget.journeeData['date']);
+        } catch (e) {
+          _date = DateTime.now();
         }
       } else {
-        continue;
+        _date = DateTime.now();
       }
 
-      for (var coachId in assignedCoaches) {
-        if (coachId == null) continue;
-
-        // ✅ Vérifier si la session est aujourd'hui
-        if (sessionDate.isAtSameMomentAs(selectedDate)) {
-          dailySessions[coachId] = (dailySessions[coachId] ?? 0) + 1;
-        }
-
-        // ✅ Vérifier si la session est cette semaine (entre lundi et dimanche)
-        if (sessionDate.isAfter(startOfWeek) && sessionDate.isBefore(endOfWeek.add(const Duration(days: 1)))) {
-          weeklySessions[coachId] = (weeklySessions[coachId] ?? 0) + 1;
-        }
-      }
+      _dateController.text = DateFormat('dd/MM/yyyy').format(_date);
+    } else {
+      _date = DateTime.now();
+      _dateController.text = '';
     }
+
+    // Autres champs du formulaire
+    _timeController.text = widget.journeeData['time'] ?? '';
+    _departureTimeController.text = widget.journeeData['departureTime'] ?? '';
+
+    _feeController.text = !_isFree && widget.journeeData['fee'] != null
+        ? widget.journeeData['fee'].toString()
+        : '';
+    _isFree = widget.journeeData['fee'] == 'Gratuit';
+
+    // Mode de transport
+    List<String> transportModes = ['Covoiturage', 'Bus', 'Individuel'];
+    _selectedTransportMode =
+        transportModes.contains(widget.journeeData['transportMode'])
+            ? widget.journeeData['transportMode']
+            : transportModes.first;
   }
 
-  // ✅ Mettre à jour les coachs avec les sessions comptées
-  setState(() {
-    for (var coach in _coaches) {
-      String coachId = coach['id'];
-      coach['dailySessions'] = dailySessions[coachId] ?? 0;
-      coach['weeklySessions'] = weeklySessions[coachId] ?? 0;
-    }
-  });
-}
+ 
 
+  
+  /// Enregistre les données de la journée
+  Future<void> _saveJournee() async {
+    try {
+      if (widget.championshipId.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("⚠️ Vous devez d'abord enregistrer un championnat !"),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
 
+      // Validation de la date
+      if (_dateController.text.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("⚠️ Veuillez spécifier une date pour la journée"),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
 
-/// ✅ **UI for selecting available coaches with session count**
-Widget _buildCoachSelection() {
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const Text("Coachs disponibles :", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-      const SizedBox(height: 10),
-      Wrap(
-        spacing: 8.0,
-        runSpacing: 4.0,
-        children: _coaches.map((coach) {
-          final isSelected = _selectedCoaches.contains(coach['id']);
-          final maxPerDay = coach['maxSessionsPerDay'];
-          final maxPerWeek = coach['maxSessionsPerWeek'];
-          final dailySessions = coach['dailySessions'];
-          final weeklySessions = coach['weeklySessions'];
+      // Validation du temps
+      if (_timeController.text.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("⚠️ Veuillez spécifier l'heure du match"),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
 
-          final remainingDaily = maxPerDay - dailySessions;
-          final remainingWeekly = maxPerWeek - weeklySessions;
+      // Vérification des coachs surchargés
+      if (_selectedCoaches.isNotEmpty && _dateController.text.isNotEmpty) {
+        DateTime selectedDate =
+            DateFormat('dd/MM/yyyy').parse(_dateController.text);
+        bool canProceed = await _coachService.validateCoachSelection(
+            _selectedCoaches, selectedDate, context);
 
-          return ChoiceChip(
-            label: Text("${coach['name']} 📅$remainingDaily/$maxPerDay 🗓️$remainingWeekly/$maxPerWeek"),
-            selected: isSelected,
-            selectedColor: Colors.blueAccent,
-            backgroundColor: Colors.grey[200],
-            onSelected: (bool selected) {
-              setState(() {
-                if (selected) {
-                  _selectedCoaches.add(coach['id']);
-                } else {
-                  _selectedCoaches.remove(coach['id']);
-                }
-              });
-            },
-          );
-        }).toList(),
-      ),
-    ],
-  );
-}
+        if (!canProceed) {
+          return; // L'utilisateur a annulé ou attend sa confirmation
+        }
+      }
 
+      DocumentReference championshipRef =
+          _firestore.collection('championships').doc(widget.championshipId);
+      DocumentSnapshot snapshot = await championshipRef.get();
 
+      if (!snapshot.exists) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text("⚠️ Erreur : Le championnat n'existe pas !")),
+        );
+        return;
+      }
 
-  /// ✅ **Save "Journée" with assigned coaches**
- Future<void> _saveJournee() async {
-  try {
-    if (widget.championshipId.isEmpty) {
+      List<dynamic> matchDays =
+          (snapshot.data() as Map<String, dynamic>)['matchDays'] ?? [];
+
+      // Préparation des données de la journée
+      Map<String, dynamic> existingDay = matchDays.length > widget.journeeIndex
+          ? Map<String, dynamic>.from(matchDays[widget.journeeIndex])
+          : {};
+
+      // Mise à jour des données
+      existingDay['date'] = _dateController.text.isNotEmpty
+          ? DateFormat('yyyy-MM-dd')
+              .format(DateFormat('dd/MM/yyyy').parse(_dateController.text))
+          : existingDay['date'];
+
+      existingDay['time'] = _timeController.text.isNotEmpty
+          ? _timeController.text
+          : existingDay['time'];
+
+      existingDay['transportMode'] =
+          _selectedTransportMode ?? existingDay['transportMode'];
+
+      existingDay['coaches'] = _selectedCoaches.isNotEmpty
+          ? _selectedCoaches
+          : existingDay['coaches'];
+
+      existingDay['departureTime'] = _departureTimeController.text.isNotEmpty
+          ? _departureTimeController.text
+          : existingDay['departureTime'];
+
+      existingDay['fee'] = _isFree
+          ? 'Gratuit'
+          : _feeController.text.isNotEmpty
+              ? int.tryParse(_feeController.text)
+              : existingDay['fee'];
+
+      // Assurer que la liste matchDays est assez grande
+      while (matchDays.length <= widget.journeeIndex) {
+        matchDays.add({});
+      }
+
+      matchDays[widget.journeeIndex] = existingDay;
+
+      await championshipRef.update({'matchDays': matchDays});
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("⚠️ Vous devez d'abord enregistrer un championnat !"),
-          backgroundColor: Colors.orange,
+          content: Text("✅ Journée mise à jour avec succès !"),
+          backgroundColor: Colors.green,
         ),
       );
-      return;
-    }
 
-    DocumentReference championshipRef =
-        _firestore.collection('championships').doc(widget.championshipId);
-    DocumentSnapshot snapshot = await championshipRef.get();
-
-    if (!snapshot.exists) {
+      Navigator.pop(context);
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("⚠️ Erreur : Le championnat n'existe pas !")),
+        SnackBar(
+          content: Text("❌ Erreur lors de l'enregistrement : $e"),
+          backgroundColor: Colors.red,
+        ),
       );
-      return;
     }
-
-    List<dynamic> matchDays =
-        (snapshot.data() as Map<String, dynamic>)['matchDays'] ?? [];
-
-    // ✅ Vérifier si la journée existe déjà, sinon en créer une vide
-    Map<String, dynamic> existingDay = matchDays.length > widget.journeeIndex
-        ? Map<String, dynamic>.from(matchDays[widget.journeeIndex])
-        : {};
-
-    // ✅ Mise à jour conditionnelle (si l'utilisateur a modifié un champ)
-    existingDay['date'] = _dateController.text.isNotEmpty
-        ? DateFormat('yyyy-MM-dd')
-            .format(DateFormat('dd/MM/yyyy').parse(_dateController.text))
-        : existingDay['date'];
-
-    existingDay['time'] = _timeController.text.isNotEmpty
-        ? _timeController.text
-        : existingDay['time'];
-
-    existingDay['transportMode'] =
-        _selectedTransportMode ?? existingDay['transportMode'];
-
-    existingDay['coaches'] = _selectedCoaches.isNotEmpty
-        ? _selectedCoaches
-        : existingDay['coaches'];
-
-    existingDay['departureTime'] = _departureTimeController.text.isNotEmpty
-        ? _departureTimeController.text
-        : existingDay['departureTime'];
-
-    existingDay['fee'] = _isFree ? 'Gratuit' : _feeController.text.isNotEmpty
-        ? int.tryParse(_feeController.text)
-        : existingDay['fee'];
-
-    // ✅ Vérifier si la liste `matchDays` est assez grande
-    while (matchDays.length <= widget.journeeIndex) {
-      matchDays.add({});
-    }
-
-    matchDays[widget.journeeIndex] = existingDay; // ✅ Mise à jour des valeurs
-
-    await championshipRef.update({'matchDays': matchDays});
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("✅ Journée mise à jour avec succès !")),
-    );
-
-    Navigator.pop(context);
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("❌ Erreur lors de l'enregistrement : $e")),
-    );
   }
-}
 
-
+  /// Crée un titre de section
   Widget _buildSectionTitle(String title, IconData icon) {
     return Padding(
       padding: const EdgeInsets.only(top: 16, bottom: 8),
@@ -372,7 +292,7 @@ Widget _buildCoachSelection() {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ✅ Display Championship Name at the Top
+            // Titre du championnat
             if (_championshipName != null) ...[
               Text(
                 _championshipName!,
@@ -389,179 +309,280 @@ Widget _buildCoachSelection() {
                 'Journée N°${widget.journeeIndex + 1}', Icons.calendar_today),
             const SizedBox(height: 16),
 
-            // 🔹 Date & Time in One Row
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSectionTitle(
-                          'Date du Journée', Icons.calendar_today),
-                      TextFormField(
-                        readOnly: true,
-                        controller: _dateController,
-                        decoration: InputDecoration(
-                          labelText: 'Sélectionner une date',
-                          border: const OutlineInputBorder(),
-                          prefixIcon: const Icon(Icons.calendar_today,
-                              color: Colors.blue),
-                          suffixIcon: IconButton(
-                            icon: const Icon(Icons.event, color: Colors.green),
-                            onPressed: () => _pickDate(),
+            // Date et heure
+            Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSectionTitle(
+                        'Informations du match', Icons.sports_soccer),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Date du match',
+                                  style:
+                                      TextStyle(fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 8),
+                              TextFormField(
+                                readOnly: true,
+                                controller: _dateController,
+                                decoration: InputDecoration(
+                                  labelText: 'Sélectionner une date',
+                                  border: const OutlineInputBorder(),
+                                  prefixIcon: const Icon(Icons.calendar_today,
+                                      color: Colors.blue),
+                                  suffixIcon: IconButton(
+                                    icon: const Icon(Icons.event,
+                                        color: Colors.green),
+                                    onPressed: () => _pickDate(),
+                                  ),
+                                ),
+                                onTap: _pickDate,
+                              ),
+                            ],
                           ),
                         ),
-                        onTap: _pickDate,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 16), // Space between fields
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSectionTitle('Heure du Match', Icons.access_time),
-                      TextFormField(
-                        readOnly: true,
-                        controller: _timeController,
-                        decoration: InputDecoration(
-                          labelText: 'Sélectionner une heure',
-                          border: const OutlineInputBorder(),
-                          prefixIcon:
-                              const Icon(Icons.schedule, color: Colors.blue),
-                          suffixIcon: IconButton(
-                            icon: const Icon(Icons.access_time,
-                                color: Colors.green),
-                            onPressed: () => _pickTime(_timeController),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Heure du match',
+                                  style:
+                                      TextStyle(fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 8),
+                              TextFormField(
+                                readOnly: true,
+                                controller: _timeController,
+                                decoration: InputDecoration(
+                                  labelText: 'Sélectionner une heure',
+                                  border: const OutlineInputBorder(),
+                                  prefixIcon: const Icon(Icons.schedule,
+                                      color: Colors.blue),
+                                  suffixIcon: IconButton(
+                                    icon: const Icon(Icons.access_time,
+                                        color: Colors.green),
+                                    onPressed: () => _pickTime(_timeController),
+                                  ),
+                                ),
+                                onTap: () => _pickTime(_timeController),
+                              ),
+                            ],
                           ),
                         ),
-                        onTap: () => _pickTime(_timeController),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-            _buildSectionTitle('Mode de Transport', Icons.directions_bus),
-            DropdownButtonFormField<String>(
-              value: _selectedTransportMode,
-              items: ['Covoiturage', 'Bus', 'Individuel'].map((mode) {
-                return DropdownMenuItem(value: mode, child: Text(mode));
-              }).toList(),
-              onChanged: (value) =>
-                  setState(() => _selectedTransportMode = value),
-              decoration: const InputDecoration(
-                labelText: "Mode de transport",
-                border: OutlineInputBorder(),
-                prefixIcon:
-                    Icon(Icons.directions_bus, color: Colors.blueAccent),
               ),
             ),
+
             const SizedBox(height: 16),
 
-            if (_selectedTransportMode == 'Bus') ...[
-              _buildSectionTitle('Heure de départ', Icons.departure_board),
-              TextFormField(
-                        readOnly: true,
-                        controller: _departureTimeController,
-                        decoration: InputDecoration(
-                          labelText: 'Sélectionner une heure',
-                          border: const OutlineInputBorder(),
-                          prefixIcon:
-                              const Icon(Icons.schedule, color: Colors.blue),
-                          suffixIcon: IconButton(
-                            icon: const Icon(Icons.access_time,
-                                color: Colors.green),
-                            onPressed: () => _pickTime(_departureTimeController),
-                          ),
-                        ),
-                        onTap: () => _pickTime(_departureTimeController),
+            // Transport
+            Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSectionTitle('Transport', Icons.directions_bus),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: _selectedTransportMode,
+                      items: ['Covoiturage', 'Bus', 'Individuel'].map((mode) {
+                        return DropdownMenuItem(value: mode, child: Text(mode));
+                      }).toList(),
+                      onChanged: (value) =>
+                          setState(() => _selectedTransportMode = value),
+                      decoration: const InputDecoration(
+                        labelText: "Mode de transport",
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.directions_bus,
+                            color: Colors.blueAccent),
                       ),
-              const SizedBox(height: 16),
-              _buildSectionTitle('Frais de Transport (TND)', Icons.money),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _feeController,
-                    enabled: !_isFree,
-                    decoration: const InputDecoration(
-                      labelText: 'Tarif (en TND)',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.money),
                     ),
-                    keyboardType: TextInputType.number,
-                  ),
+                    const SizedBox(height: 16),
+                    if (_selectedTransportMode == 'Bus') ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Heure de départ',
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 8),
+                                TextFormField(
+                                  readOnly: true,
+                                  controller: _departureTimeController,
+                                  decoration: InputDecoration(
+                                    labelText: 'Sélectionner une heure',
+                                    border: const OutlineInputBorder(),
+                                    prefixIcon: const Icon(Icons.schedule,
+                                        color: Colors.blue),
+                                    suffixIcon: IconButton(
+                                      icon: const Icon(Icons.access_time,
+                                          color: Colors.green),
+                                      onPressed: () =>
+                                          _pickTime(_departureTimeController),
+                                    ),
+                                  ),
+                                  onTap: () =>
+                                      _pickTime(_departureTimeController),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Frais de transport',
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: _feeController,
+                                        enabled: !_isFree,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Tarif (TND)',
+                                          border: OutlineInputBorder(),
+                                          prefixIcon: Icon(Icons.money),
+                                        ),
+                                        keyboardType: TextInputType.number,
+                                      ),
+                                    ),
+                                    Checkbox(
+                                      value: _isFree,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _isFree = value!;
+                                          if (_isFree) {
+                                            _feeController.clear();
+                                          }
+                                        });
+                                      },
+                                    ),
+                                    const Text('Gratuit'),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Checkbox(
-                  value: _isFree,
-                  onChanged: (value) {
-                    setState(() {
-                      _isFree = value!;
-                      if (_isFree) {
-                        _feeController.clear();
-                      }
-                    });
-                  },
-                ),
-                const Text('Gratuit', style: TextStyle(fontSize: 16)),
-              ],
+              ),
             ),
-              const SizedBox(height: 16),
-            ],
-            _buildSectionTitle('Affectation des Coaches', Icons.sports),
 
-            _buildCoachSelection(),
             const SizedBox(height: 16),
-            Row(
-  mainAxisAlignment: MainAxisAlignment.center, // ✅ Center the button
-  children: [
-    ElevatedButton(
-      onPressed: _saveJournee,
-      style: ElevatedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12), // ✅ Adjust size
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold), // ✅ Bigger text
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8), // ✅ Rounded corners
-        ),
-      ),
-      child: const Text("Enregistrer"),
-    ),
-  ],
-),
+
+            // Coaches
+            Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSectionTitle('Affectation des Coaches', Icons.sports),
+                    const SizedBox(height: 8),
+const SizedBox(height: 16),
+            _coaches.isEmpty
+                ? const Center(
+                    child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Text(
+                        "Veuillez d'abord sélectionner une date pour voir les coachs disponibles"),
+                  ))
+                : _coachService.buildCoachSelectionWidget(
+                    _coaches, _selectedCoaches, (updatedSelection) {
+                    setState(() {
+                      _selectedCoaches = updatedSelection;
+                    });
+                  }),
+            const SizedBox(height: 32),                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Bouton d'enregistrement
+            Center(
+              child: ElevatedButton.icon(
+                onPressed: _saveJournee,
+                icon: const Icon(Icons.save, color: Colors.white),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blueAccent,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
+                  textStyle: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                label: const Text("Enregistrer",
+                    style: TextStyle(color: Colors.white)),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
+  /// Sélectionne une date
   Future<void> _pickDate() async {
-  final DateTime? pickedDate = await showDatePicker(
-    context: context,
-    initialDate: DateTime.now(),
-    firstDate: DateTime.now(),
-    lastDate: DateTime(2100),
-  );
+    final DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2100),
+    );
 
-  if (pickedDate != null) {
-    setState(() {
-      _updateDateController(pickedDate); // ✅ Met à jour la date dans le champ texte
-    });
+    if (pickedDate != null) {
+      setState(() {
+        _updateDateController(pickedDate);
+      });
 
-    // ✅ Après mise à jour, recharger la disponibilité des coachs
-    await _fetchCoachSessionCountsForDate(pickedDate);
+      // Recharger les données des coachs après changement de date
+      await _loadCoachesData();
+    }
   }
-}
 
-
+  /// Met à jour le contrôleur de date
   void _updateDateController(DateTime date) {
-    _dateController.text = "${date.day}/${date.month}/${date.year}";
+    _dateController.text = DateFormat('dd/MM/yyyy').format(date);
+    _date = date;
   }
 
+  /// Sélectionne une heure
   Future<void> _pickTime(TextEditingController controller) async {
     TimeOfDay? pickedTime = await showTimePicker(
       context: context,

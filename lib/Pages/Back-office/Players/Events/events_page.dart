@@ -175,17 +175,23 @@ Widget _buildExpandedEventDetails(
       children: [
         // ✅ CHAMPIONNATS : Affiche uniquement pour les "championships"
         if (collection == "championships") ...[
+          _buildEventDetailRow(Icons.location_on,
+              "Lieu: ${eventData['locationType'] ?? 'N/A'}", Colors.red),
+          // ✅ Afficher les détails si le match est contre une académie
+          if (eventData['locationType'] == "Extérieur") ...[
+            _buildEventDetailRow(
+                Icons.map,
+                "Adresse: ${eventData['address'] ?? 'Non définie'}",
+                Colors.orange),],
+                
           _buildEventDetailRow(
               Icons.groups,
               "Groupes: ${(eventData['selectedGroups'] as List<dynamic>?)?.join(", ") ?? 'Aucun groupe'}",
-              Colors.green),
-          _buildEventDetailRow(Icons.location_on,
-              "Lieu: ${eventData['locationType'] ?? 'N/A'}", Colors.red),
-          _buildEventDetailRow(
-              Icons.euro, "Frais: ${eventData['fee']} TND", Colors.teal),
+              Colors.purple),
 
-               _buildEventDetailRow(Icons.location_on,
-            "Lieu: ${eventData['locationType'] ?? 'N/A'}", Colors.red),
+          _buildEventDetailRow(
+              Icons.money, "Frais: ${eventData['fee']} TND", Colors.teal),
+
 
         const SizedBox(height: 10),
 
@@ -253,16 +259,22 @@ Widget _buildExpandedEventDetails(
 
         // ✅ TOURNOIS : Affiche uniquement pour "tournaments"
         if (collection == "tournaments") ...[
-          _buildEventDetailRow(
-              Icons.groups,
-              "Groupes: ${(eventData['selectedGroups'] as List<dynamic>?)?.join(", ") ?? 'Aucun groupe'}",
-              Colors.green),
+          
           _buildEventDetailRow(
               Icons.date_range,
               "Date: ${_formatEventDates(eventData['dates'])}",
               const Color.fromARGB(255, 27, 13, 149)),
           _buildEventDetailRow(Icons.location_on,
               "Lieu: ${eventData['locationType'] ?? 'N/A'}", Colors.red),
+              if (eventData['locationType'] == "Extérieur") ...[
+            _buildEventDetailRow(
+                Icons.map,
+                "Adresse: ${eventData['address'] ?? 'Non définie'}",
+                Colors.orange),],
+              _buildEventDetailRow(
+              Icons.groups,
+              "Groupes: ${(eventData['selectedGroups'] as List<dynamic>?)?.join(", ") ?? 'Aucun groupe'}",
+              Colors.green),
           _buildEventDetailRow(
               Icons.money, "Frais: ${eventData['fee']} TND", Colors.teal),
         ],

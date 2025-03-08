@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'Calender_player/training_calender.dart';
+import 'Evaluation/evaluation_page.dart';
 import 'Events/events_page.dart';
 import 'Groupes/add_groupe_page.dart';
 import 'Groupes/all_groupes_page.dart';
@@ -18,6 +19,9 @@ class PlayerRoutes {
         return MaterialPageRoute(builder: (_) => const ManageGroupsPage());
       case '/addGroup':
         return MaterialPageRoute(builder: (_) => const AddGroupPage());
+        
+      case '/evaluations':
+        return MaterialPageRoute(builder: (_) => const PlayerEvaluationPage());
       // My Team
       case '/manageTraining':
         return MaterialPageRoute(builder: (_) => const TrainingCalendarPage());

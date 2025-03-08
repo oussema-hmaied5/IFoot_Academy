@@ -7,6 +7,8 @@ import 'package:ifoot_academy/Pages/Back-office/backend_template.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../Coach/coach_service.dart';
+
 class TournamentForm extends StatefulWidget {
   final DocumentSnapshot<Object?>? tournament;
   final List<String> groups;
@@ -21,13 +23,27 @@ class TournamentForm extends StatefulWidget {
 }
 
 class _TournamentFormState extends State<TournamentForm> {
+    final _coachService = CoachService(); // Utilisation du service de coach
+
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _addressController = TextEditingController();
   final _itineraryController = TextEditingController();
-  final _tenueController = TextEditingController();
   final _documentsController = TextEditingController();
   final _feeController = TextEditingController();
+    // Variables pour les joueurs et coachs
+  List<String> _availablePlayers = [];
+  bool _loadingPlayers = false;
+  List<String> _availableGroups = [];
+ bool _loadingGroups = false ;
+  String? _selectedTransportMode;
+    final _departureTimeController = TextEditingController();
+
+
+    final Map<String, List<String>> _selectedPlayersByGroup = {};
+  final Map<String, String> _selectedGroupsWithUniforms = {};
+  final Map<String, TextEditingController> _uniformControllers = {};
+
 
   String? _locationType;
   bool _isFree = false;
@@ -35,201 +51,62 @@ class _TournamentFormState extends State<TournamentForm> {
   List<String> _selectedChildren = [];
   final _dateController = TextEditingController();
   String? _transportMode;
-  final List<String> _selectedCoaches = []; // ✅ Liste des coachs assignés
+  DateTime? _date;
+   List<String> _selectedCoaches = []; // ✅ Liste des coachs assignés
   List<Map<String, dynamic>> _coaches = []; // ✅ Correct
   final List<String> _locationTypes = ['Ifoot', 'Extérieur'];
-  final List<String> _transportModes = ['Covoiturage', 'Bus', 'Individuel'];
-  Map<String, List<String>> _childrenByGroup = {};
   final _firestore = FirebaseFirestore.instance;
 
   @override
   void initState() {
     super.initState();
-    _fetchCoaches();
-
-    _fetchGroupsAndChildren();
+    _loadCoachesData();
+    _fetchGroups();
     if (widget.tournament != null) {
       _loadTournamentData(widget.tournament!);
     }
   }
 
-  Future<void> _fetchCoaches() async {
-    try {
-      final snapshot = await _firestore.collection('coaches').get();
-      final allCoaches = snapshot.docs
-          .map((doc) => {
-                'id': doc.id,
-                'name': doc.data()['name'],
-                'maxSessionsPerDay': doc.data().containsKey('maxSessionsPerDay')
-                    ? doc.data()['maxSessionsPerDay']
-                    : 2,
-                'maxSessionsPerWeek':
-                    doc.data().containsKey('maxSessionsPerWeek')
-                        ? doc.data()['maxSessionsPerWeek']
-                        : 10,
-              })
-          .toList();
 
+    /// Récupère les groupes disponibles depuis Firestore
+  Future<void> _fetchGroups() async {
+    try {
+      final groupsSnapshot = await _firestore.collection('groups').get();
       setState(() {
-        _coaches = allCoaches;
+        _availableGroups =
+            groupsSnapshot.docs.map((doc) => doc['name'] as String).toList();
+        _loadingGroups = false;
       });
-      // ✅ Charger les séances en fonction de la date actuelle (ou date sélectionnée)
+    } catch (e) {
+      debugPrint("Erreur lors de la récupération des groupes : $e");
+    }
+  }
+
+ Future<void> _loadCoachesData() async {
+    try {
       if (_dateController.text.isNotEmpty) {
         DateTime selectedDate =
             DateFormat('dd/MM/yyyy').parse(_dateController.text);
-        await _fetchCoachSessionCounts(selectedDate);
+
+        // Utiliser le service coach pour obtenir les coachs avec leur comptage de sessions
+        final coachesWithSessions =
+            await _coachService.getCoachesWithSessionCounts(selectedDate);
+
+        setState(() {
+          _coaches = coachesWithSessions;
+        });
+      } else {
+        // Si pas de date, charger tous les coachs sans compter les sessions
+        final allCoaches = await _coachService.fetchAllCoaches();
+        setState(() {
+          _coaches = allCoaches;
+        });
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Erreur lors de la récupération des coachs: $e')),
-      );
+      debugPrint("Erreur lors du chargement des coachs: $e");
     }
   }
 
-  Future<void> _fetchCoachSessionCounts(DateTime selectedDate) async {
-    // ✅ Déterminer la semaine (du lundi au dimanche)
-    DateTime startOfWeek =
-        selectedDate.subtract(Duration(days: selectedDate.weekday - 1));
-    DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
-
-    Map<String, int> dailySessions = {};
-    Map<String, int> weeklySessions = {};
-
-    // ✅ Liste des collections à vérifier
-    List<String> collections = [
-      'trainings',
-      'championships',
-      'friendlyMatches',
-      'tournaments'
-    ];
-
-    for (String collection in collections) {
-      final snapshot = await _firestore.collection(collection).get();
-
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        if (!data.containsKey('coaches')) continue;
-
-        List<dynamic> assignedCoaches = data['coaches'];
-
-        DateTime sessionDate = DateTime.now();
-        if (data.containsKey('date')) {
-          // ✅ Convertir la date correctement
-          if (data['date'] is Timestamp) {
-            sessionDate = (data['date'] as Timestamp).toDate();
-          } else if (data['date'] is String) {
-            try {
-              sessionDate = DateTime.parse(data['date']);
-            } catch (e) {
-              continue;
-            }
-          } else {
-            continue;
-          }
-        } else if (collection == "championships" &&
-            data.containsKey('matchDays')) {
-          // ✅ Extraire les dates des matchs dans un championnat
-          for (var matchDay in data['matchDays']) {
-            if (matchDay is Map<String, dynamic> &&
-                matchDay.containsKey('date')) {
-              try {
-                sessionDate = DateTime.parse(matchDay['date']);
-              } catch (e) {
-                continue;
-              }
-            } else {
-              continue;
-            }
-          }
-        } else {
-          continue;
-        }
-
-        for (var coachId in assignedCoaches) {
-          if (coachId == null) continue;
-
-          // ✅ Vérifier si la session est aujourd'hui
-          if (sessionDate.isAtSameMomentAs(selectedDate)) {
-            dailySessions[coachId] = (dailySessions[coachId] ?? 0) + 1;
-          }
-
-          // ✅ Vérifier si la session est cette semaine (entre lundi et dimanche)
-          if (sessionDate.isAfter(startOfWeek) &&
-              sessionDate.isBefore(endOfWeek.add(const Duration(days: 1)))) {
-            weeklySessions[coachId] = (weeklySessions[coachId] ?? 0) + 1;
-          }
-        }
-      }
-    }
-
-    // ✅ Mettre à jour les coachs avec les sessions comptées
-    setState(() {
-      for (var coach in _coaches) {
-        String coachId = coach['id'];
-        coach['dailySessions'] = dailySessions[coachId] ?? 0;
-        coach['weeklySessions'] = weeklySessions[coachId] ?? 0;
-      }
-    });
-  }
-
-  Widget _buildCoachSelection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text("Coachs disponibles :",
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 8.0,
-          runSpacing: 4.0,
-          children: _coaches.map((coach) {
-            final isSelected = _selectedCoaches.contains(coach['id']);
-            final maxPerDay = (coach['maxSessionsPerDay'] ?? 2);
-            final maxPerWeek = (coach['maxSessionsPerWeek'] ?? 10);
-            final dailySessions = (coach['dailySessions'] ?? 0);
-            final weeklySessions = (coach['weeklySessions'] ?? 0);
-
-            final remainingDaily = maxPerDay - dailySessions;
-            final remainingWeekly = maxPerWeek - weeklySessions;
-
-            return ChoiceChip(
-              label: Text(
-                  "${coach['name']} 📅$remainingDaily/$maxPerDay 🗓️$remainingWeekly/$maxPerWeek"),
-              selected: isSelected,
-              selectedColor: Colors.blueAccent,
-              backgroundColor: Colors.grey[200],
-              onSelected: (bool selected) {
-                setState(() {
-                  if (selected) {
-                    _selectedCoaches.add(coach['id']);
-                  } else {
-                    _selectedCoaches.remove(coach['id']);
-                  }
-                });
-              },
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _fetchGroupsAndChildren() async {
-    final groupsSnapshot = await _firestore.collection('groups').get();
-    final childrenSnapshot = await _firestore.collection('children').get();
-
-    setState(() {
-      _childrenByGroup = {
-        for (var groupDoc in groupsSnapshot.docs)
-          groupDoc['name']: childrenSnapshot.docs
-              .where((childDoc) =>
-                  (childDoc['assignedGroups'] as List).contains(groupDoc.id))
-              .map((childDoc) => childDoc['name'] as String)
-              .toList(),
-      };
-    });
-  }
 
   void _loadTournamentData(DocumentSnapshot<Object?> tournament) {
     final data = tournament.data() as Map<String, dynamic>;
@@ -243,11 +120,12 @@ class _TournamentFormState extends State<TournamentForm> {
     _itineraryController.text = data['itinerary'] ?? '';
     _feeController.text = data['fee'] ?? '';
     _isFree = data['fee'] == 'Gratuit';
-
-    _tenueController.text = data['tenue'] ?? '';
     _documentsController.text = data['documents'] ?? '';
-    _transportMode = data['transportMode'];
-
+    List<String> transportModes = ['Covoiturage', 'Bus', 'Individuel'];
+    _selectedTransportMode =
+        transportModes.contains(data['transportMode'])
+            ? data['transportMode']
+            : transportModes.first;
 
     // ✅ Vérifier `selectedGroups` et `selectedChildren`
     _selectedGroups = (data['selectedGroups'] is List)
@@ -257,7 +135,28 @@ class _TournamentFormState extends State<TournamentForm> {
     _selectedChildren = (data['selectedChildren'] is List)
         ? List<String>.from(data['selectedChildren'])
         : [];
+    
+// Chargement des joueurs par groupe
+  _selectedPlayersByGroup.clear();
+  if (data['playersByGroup'] is Map) {
+    Map<String, dynamic> playersByGroup = data['playersByGroup'] as Map<String, dynamic>;
+    playersByGroup.forEach((groupName, players) {
+      if (players is List) {
+        _selectedPlayersByGroup[groupName] = List<String>.from(players);
+      }
+    });
+  }
 
+  _uniformControllers.clear();
+  if (data['uniforms'] is Map) {
+    Map<String, dynamic> uniforms = data['uniforms'] as Map<String, dynamic>;
+    uniforms.forEach((groupName, uniform) {
+      if (uniform is String) {
+        _selectedGroupsWithUniforms[groupName] = uniform;
+        _uniformControllers[groupName] = TextEditingController(text: uniform);
+      }
+    });
+  }
 
  // ✅ Charger les coachs sélectionnés
   _selectedCoaches.clear();
@@ -266,6 +165,11 @@ class _TournamentFormState extends State<TournamentForm> {
   }
 
     setState(() {});
+
+    // ✅ Rechargement des données des coachs avec leurs sessions
+  if (_dateController.text.isNotEmpty) {
+    _loadCoachesData(); 
+  }
   }
 
   Widget _buildSectionTitle(String title, IconData icon) {
@@ -284,257 +188,772 @@ class _TournamentFormState extends State<TournamentForm> {
     );
   }
 
-  Widget _buildMultiSelect(
-      String label, List<String> items, List<String> selectedItems) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        Wrap(
-          spacing: 8,
-          children: items.map((item) {
-            final isSelected = selectedItems.contains(item);
-            return FilterChip(
-              label: Text(item),
-              selected: isSelected,
-              onSelected: (selected) {
-                setState(() {
-                  if (selected) {
-                    selectedItems.add(item);
-                    _selectedChildren.addAll(_childrenByGroup[item] ?? []);
-                  } else {
-                    selectedItems.remove(item);
-                    _selectedChildren.removeWhere((child) =>
-                        (_childrenByGroup[item] ?? []).contains(child));
-                  }
-                });
-              },
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 16),
-        Text('Joueurs sélectionnés (${_selectedChildren.length})',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        Wrap(
-          spacing: 8,
-          children: _selectedChildren.map((child) {
-            return Chip(
-              label: Text(child),
-              onDeleted: () {
-                setState(() {
-                  _selectedChildren.remove(child);
-                });
-              },
-            );
-          }).toList(),
-        ),
-      ],
+
+  /// Sélectionne une date
+  Future<void> _pickDate() async {
+    final DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2100),
     );
+
+    if (pickedDate != null) {
+      setState(() {
+        _updateDateController(pickedDate);
+      });
+
+      // Recharger les données des coachs après changement de date
+      await _loadCoachesData();
+    }
   }
 
-  Widget _buildGroupAndChildrenSelection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildMultiSelect('Groupes participants',
-            _childrenByGroup.keys.toList(), _selectedGroups),
-      ],
-    );
+  /// Met à jour le contrôleur de date
+  void _updateDateController(DateTime date) {
+    _dateController.text = DateFormat('dd/MM/yyyy').format(date);
+    _date = date;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return TemplatePageBack(
-      title: (widget.tournament == null
-          ? 'Ajouter un tournoi'
-          : 'Modifier un tournoi'),
-      footerIndex: 3,
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            _buildSectionTitle('Informations Générales', Icons.info),
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nom du tournoi',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.sports_soccer),
-              ),
+
+ @override
+Widget build(BuildContext context) {
+  return TemplatePageBack(
+    title: (widget.tournament == null
+        ? 'Ajouter un tournoi'
+        : 'Modifier un tournoi'),
+    footerIndex: 3,
+    body: SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          // Section Informations Générales
+          Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(height: 16),
-            _buildSectionTitle('Date du Tournoi', Icons.date_range),
-            TextField(
-              controller: _dateController,
-              readOnly: true,
-              decoration: const InputDecoration(
-                labelText: 'Sélectionner une date',
-                border: OutlineInputBorder(),
-              ),
-              onTap: () async {
-                DateTime? pickedDate = await showDatePicker(
-                  context: context,
-                  initialDate: DateTime.now(),
-                  firstDate: DateTime.now(),
-                  lastDate: DateTime(2100),
-                );
-                if (pickedDate != null) {
-                  setState(() {
-                    _dateController.text =
-                        DateFormat('dd/MM/yyyy').format(pickedDate);
-                  });
-                  await _fetchCoachSessionCounts(pickedDate);
-                }
-              },
-            ),
-            const SizedBox(height: 16),
-            _buildSectionTitle('Lieu et Itinéraire', Icons.place),
-            DropdownButtonFormField<String>(
-              value: _locationType,
-              items: _locationTypes.map((type) {
-                return DropdownMenuItem(value: type, child: Text(type));
-              }).toList(),
-              onChanged: (value) => setState(() => _locationType = value),
-              decoration: const InputDecoration(
-                labelText: 'Type de lieu',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.place),
-              ),
-            ),
-            if (_locationType == 'Extérieur') ...[
-              const SizedBox(height: 16),
-              TextField(
-                controller: _addressController,
-                decoration: const InputDecoration(
-                  labelText: 'Adresse',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.location_on),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _itineraryController,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Itinéraire',
-                        border: OutlineInputBorder(),
+                  _buildSectionTitle('Informations Générales', Icons.info),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _nameController,
+                    decoration: InputDecoration(
+                      labelText: 'Nom du tournoi',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
                       ),
+                      prefixIcon: const Icon(Icons.sports_soccer, color: Colors.blue),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8.0),
-                      ),
-                    ),
-                    onPressed: _selectItinerary,
-                    child: const Text('Choisir sur la carte'),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              _buildSectionTitle('Transport', Icons.directions_bus),
-              DropdownButtonFormField<String>(
-                value: _transportMode,
-                items: _transportModes.map((mode) {
-                  return DropdownMenuItem(value: mode, child: Text(mode));
-                }).toList(),
-                onChanged: (value) => setState(() => _transportMode = value),
-                decoration: const InputDecoration(
-                  labelText: 'Mode de transport',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.directions_bus),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Section Date du Tournoi
+          Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionTitle('Date du Tournoi', Icons.date_range),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    readOnly: true,
+                    controller: _dateController,
+                    decoration: InputDecoration(
+                      labelText: 'Sélectionner une date',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      prefixIcon: const Icon(Icons.calendar_today, color: Colors.blue),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.event, color: Colors.green),
+                        onPressed: _pickDate,
+                      ),
+                    ),
+                    onTap: _pickDate,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Section Lieu et Itinéraire
+          Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionTitle('Lieu et Itinéraire', Icons.place),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: _locationType,
+                    items: _locationTypes.map((type) {
+                      return DropdownMenuItem(
+                        value: type,
+                        child: Text(type),
+                      );
+                    }).toList(),
+                    onChanged: (value) => setState(() => _locationType = value),
+                    decoration: InputDecoration(
+                      labelText: 'Type de lieu',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      prefixIcon: const Icon(Icons.place, color: Colors.blue),
+                    ),
+                  ),
+                  if (_locationType == 'Extérieur') ...[
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _addressController,
+                      decoration: InputDecoration(
+                        labelText: 'Adresse',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        prefixIcon: const Icon(Icons.location_on, color: Colors.blue),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _itineraryController,
+                            readOnly: true,
+                            decoration: InputDecoration(
+                              labelText: 'Itinéraire',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          onPressed: _selectItinerary,
+                          child: const Text('Choisir sur la carte'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Section Informations Financières
+          Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionTitle('Informations Financières', Icons.monetization_on),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _feeController,
+                          enabled: !_isFree,
+                          decoration: InputDecoration(
+                            labelText: 'Tarif (en TND)',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            prefixIcon: const Icon(Icons.money, color: Colors.blue),
+                          ),
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Checkbox(
+                        value: _isFree,
+                        onChanged: (value) {
+                          setState(() {
+                            _isFree = value!;
+                            if (_isFree) {
+                              _feeController.clear();
+                            }
+                          });
+                        },
+                      ),
+                      const Text('Gratuit', style: TextStyle(fontSize: 16)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Section Tenue et Documents
+          Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionTitle('Documents', Icons.description),
+                  const SizedBox(height: 16),
+                                    TextField(
+                    controller: _documentsController,
+                    decoration: InputDecoration(
+                      labelText: 'Documents requis',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      prefixIcon: const Icon(Icons.folder, color: Colors.blue),
+                    ),
+                    maxLines: 3,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Section Description
+          Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionTitle('Description', Icons.description),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _descriptionController,
+                    decoration: InputDecoration(
+                      labelText: 'Description',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      prefixIcon: const Icon(Icons.description, color: Colors.blue),
+                    ),
+                    maxLines: 3,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Section Groupes Participants
+          Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 16),
+                   _buildGroupSelection(),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Section Affectation des Coaches
+          Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionTitle('Affectation des Coaches', Icons.sports),
+                  const SizedBox(height: 16),
+                  _coaches.isEmpty
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(16.0),
+                            child: Text(
+                                "Veuillez d'abord sélectionner une date pour voir les coachs disponibles"),
+                          ),
+                        )
+                      : _coachService.buildCoachSelectionWidget(
+                          _coaches, _selectedCoaches, (updatedSelection) {
+                          setState(() {
+                            _selectedCoaches = updatedSelection;
+                          });
+                        }),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          // Bouton Enregistrer
+          Center(
+            child: ElevatedButton.icon(
+              onPressed: _saveTournament,
+              icon: const Icon(Icons.save, color: Colors.white),
+              label: Text(
+                widget.tournament == null ? 'Enregistrer' : 'Mettre à jour',
+                style: const TextStyle(color: Colors.white),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blueAccent,
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
                 ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+/// Optimisation de la fonction pour charger les joueurs depuis un groupe
+Future<void> _fetchPlayersForGroup(String groupName) async {
+  setState(() {
+    _loadingPlayers = true;
+    _availablePlayers.clear();
+  });
+
+  try {
+    final groupSnapshot = await _firestore
+        .collection('groups')
+        .where('name', isEqualTo: groupName)
+        .limit(1)
+        .get();
+
+    if (groupSnapshot.docs.isEmpty) {
+      debugPrint('Groupe non trouvé: $groupName');
+      setState(() => _loadingPlayers = false);
+      return;
+    }
+
+    var groupData = groupSnapshot.docs.first.data();
+    List<String> playerIds = [];
+
+    if (groupData.containsKey('players') && groupData['players'] is List) {
+      List<dynamic> playersData = groupData['players'];
+      if (playersData.isNotEmpty && playersData.first is Map) {
+        playerIds =
+            playersData.map((player) => player['id'].toString()).toList();
+      } else {
+        playerIds = playersData.map((player) => player.toString()).toList();
+      }
+    }
+
+    List<String> playerNames = [];
+    for (String playerId in playerIds) {
+      try {
+        DocumentSnapshot childDoc =
+            await _firestore.collection('children').doc(playerId).get();
+        if (childDoc.exists) {
+          var childData = childDoc.data() as Map<String, dynamic>;
+          if (childData.containsKey('name')) {
+            playerNames.add(childData['name'] as String);
+          }
+        }
+      } catch (e) {
+        debugPrint('Erreur lors de la récupération du joueur $playerId: $e');
+      }
+    }
+
+    setState(() {
+      _availablePlayers = playerNames;
+      _loadingPlayers = false;
+      
+      // ✅ Tous les joueurs sont sélectionnés par défaut
+      if (!_selectedPlayersByGroup.containsKey(groupName) || _selectedPlayersByGroup[groupName]!.isEmpty) {
+        _selectedPlayersByGroup[groupName] = List<String>.from(playerNames);
+        _updateSelectedChildrenList();
+      }
+    });
+  } catch (e) {
+    debugPrint('Erreur lors de la récupération des joueurs: $e');
+    setState(() => _loadingPlayers = false);
+  }
+}
+
+// 6. Ajoutez cette méthode pour mettre à jour la liste complète des joueurs sélectionnés
+void _updateSelectedChildrenList() {
+  _selectedChildren.clear();
+  _selectedPlayersByGroup.forEach((_, players) {
+    _selectedChildren.addAll(players);
+  });
+}
+
+Future<void> _showPlayerSelectionDialog(String group) async {
+  List<String> selectedPlayers = _selectedPlayersByGroup[group] ?? [];
+
+  await _fetchPlayersForGroup(group);
+  
+  // ✅ Utiliser la liste mise à jour par _fetchPlayersForGroup
+  selectedPlayers = _selectedPlayersByGroup[group] ?? [];
+
+  await showDialog(
+    context: context,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setStateDialog) {
+          return AlertDialog(
+            title: Text('Sélectionner les joueurs pour $group'),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 400,
+              child: _loadingPlayers
+                  ? const Center(child: CircularProgressIndicator())
+                  : _availablePlayers.isEmpty
+                      ? const Center(
+                          child:
+                              Text('Aucun joueur disponible dans ce groupe'))
+                      : Column(
+                          children: [
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 8.0),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    '${_availablePlayers.length} joueurs disponibles',
+                                    style: const TextStyle(fontWeight: FontWeight.bold)
+                                  ),
+                                  // ✅ Boutons pour tout sélectionner/désélectionner
+                                  Row(
+                                    children: [
+                                      TextButton(
+                                        onPressed: () {
+                                          setStateDialog(() {
+                                            selectedPlayers = [];
+                                          });
+                                        },
+                                        child: const Text("Aucun"),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          setStateDialog(() {
+                                            selectedPlayers = List<String>.from(_availablePlayers);
+                                          });
+                                        },
+                                        child: const Text("Tous"),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                itemCount: _availablePlayers.length,
+                                itemBuilder: (context, index) {
+                                  final player = _availablePlayers[index];
+                                  return CheckboxListTile(
+                                    title: Text(player),
+                                    value: selectedPlayers.contains(player),
+                                    onChanged: (value) {
+                                      setStateDialog(() {
+                                        if (value == true) {
+                                          selectedPlayers.add(player);
+                                        } else {
+                                          selectedPlayers.remove(player);
+                                        }
+                                      });
+                                    },
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Annuler'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _selectedPlayersByGroup[group] = selectedPlayers;
+                    // ✅ Mettre à jour la liste globale
+                    _updateSelectedChildrenList();
+                  });
+                  Navigator.pop(context);
+                },
+                child: Text('Valider (${selectedPlayers.length})'),
               ),
             ],
-            const SizedBox(height: 16),
-            _buildSectionTitle(
-                'Informations Financières', Icons.monetization_on),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _feeController,
-                    enabled: !_isFree,
-                    decoration: const InputDecoration(
-                      labelText: 'Tarif (en TND)',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.money),
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Checkbox(
-                  value: _isFree,
-                  onChanged: (value) {
-                    setState(() {
-                      _isFree = value!;
-                      if (_isFree) {
-                        _feeController.clear();
-                      }
-                    });
-                  },
-                ),
-                const Text('Gratuit', style: TextStyle(fontSize: 16)),
-              ],
-            ),
-            const SizedBox(height: 16),
-            _buildSectionTitle('Tenue et Documents', Icons.description),
-            TextField(
-              controller: _tenueController,
-              decoration: const InputDecoration(
-                labelText: 'Tenue',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.style),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _documentsController,
-              decoration: const InputDecoration(
-                labelText: 'Documents requis',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.folder),
-              ),
-              maxLines: 3,
-            ),
-            const SizedBox(height: 16),
-            _buildSectionTitle('Description', Icons.description),
-            TextField(
-              controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Description',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.description),
-              ),
-              maxLines: 3,
-            ),
-            const SizedBox(height: 16),
-              _buildSectionTitle('Groupes Participants', Icons.groups),
+          );
+        },
+      );
+    },
+  );
+}
 
-            _buildGroupAndChildrenSelection(),
-            const SizedBox(height: 16),
-            _buildSectionTitle('Affectation des Coaches', Icons.sports),
 
-            _buildCoachSelection(),
-            const SizedBox(height: 16),
+
+  /// Construction de l'interface de sélection des groupes pour une académie
+  Widget _buildGroupSelection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Flexible(
+              child: _buildSectionTitle('Groupes participant', Icons.group),
+            ),
+            const SizedBox(width: 8),
             ElevatedButton.icon(
-              onPressed: _saveTournament,
-              icon: const Icon(Icons.save),
-              label: Text(
-                  widget.tournament == null ? 'Enregistrer' : 'Mettre à jour'),
+              icon: const Icon(Icons.add,
+                  color: Color.fromARGB(255, 255, 255, 255), size: 20),
+              label: const Text(
+                'Ajouter',
+                style: TextStyle(color: Colors.white),
+                overflow: TextOverflow.ellipsis,
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple,
+                padding:
+                    const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              onPressed: () {
+                _showGroupSelectionDialog();
+              },
             ),
           ],
         ),
-      ),
+        if (_selectedGroups.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12.0),
+            child: Text(
+                "Aucun groupe sélectionné. Ajoutez des groupes pour participer au match."),
+          ),
+        ..._selectedGroups.map((group) {
+          final playersCount = _selectedPlayersByGroup[group]?.length ?? 0;
+
+          if (!_uniformControllers.containsKey(group)) {
+            _uniformControllers[group] = TextEditingController(
+                text: _selectedGroupsWithUniforms[group] ?? '');
+          } else {
+            _uniformControllers[group]!.text =
+                _selectedGroupsWithUniforms[group] ?? '';
+          }
+
+          return Card(
+            margin: const EdgeInsets.only(bottom: 16),
+            elevation: 2,
+            color: Colors.deepPurple.shade50,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: Colors.deepPurple.shade200, width: 1),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "Groupe: $group",
+                        style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepPurple),
+                      ),
+                      Row(
+                        children: [
+                          Badge(
+                            backgroundColor: Colors.deepPurple,
+                            label: Text('$playersCount',
+                                style: const TextStyle(color: Colors.white)),
+                            child: IconButton(
+                              icon: const Icon(Icons.people,
+                                  color: Colors.deepPurple),
+                              tooltip: 'Sélectionner des joueurs',
+                              onPressed: () {
+                                _showPlayerSelectionDialog(group);
+                              },
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            tooltip: 'Supprimer le groupe',
+                            onPressed: () {
+                              setState(() {
+                                _selectedGroups.remove(group);
+                                _selectedGroupsWithUniforms.remove(group);
+                                _selectedPlayersByGroup.remove(group);
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _uniformControllers[group],
+                    decoration: const InputDecoration(
+                      labelText: 'Tenue pour ce groupe',
+                      border: OutlineInputBorder(),
+                      prefixIcon:
+                          Icon(Icons.checkroom, color: Colors.deepPurple),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.deepPurple),
+                      ),
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedGroupsWithUniforms[group] = value;
+                      });
+                    },
+                  ),
+                  if (_selectedPlayersByGroup.containsKey(group) &&
+                      _selectedPlayersByGroup[group]!.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Text("Joueurs sélectionnés:",
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepPurple)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: _selectedPlayersByGroup[group]!.map((player) {
+                        return Chip(
+                          backgroundColor: Colors.deepPurple.shade100,
+                          avatar: const CircleAvatar(
+                            backgroundColor: Colors.deepPurple,
+                            child: Icon(Icons.person,
+                                size: 14, color: Colors.white),
+                          ),
+                          label: Text(player),
+                          deleteIcon: const Icon(Icons.close, size: 14),
+                          onDeleted: () {
+                            setState(() {
+                              _selectedPlayersByGroup[group]!.remove(player);
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ]
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ],
     );
   }
+
+  /// Dialogue pour la sélection d'un nouveau groupe
+  Future<void> _showGroupSelectionDialog() async {
+    String? selectedGroup;
+    List<String> availableGroupsToSelect = _availableGroups
+        .where((group) => !_selectedGroups.contains(group))
+        .toList();
+
+    if (availableGroupsToSelect.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Tous les groupes ont déjà été ajoutés!')));
+      return;
+    }
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Sélectionner un groupe'),
+              content: DropdownButton<String>(
+                value: selectedGroup,
+                hint: const Text('Choisissez un groupe'),
+                isExpanded: true,
+                items: availableGroupsToSelect.map((group) {
+                  return DropdownMenuItem(value: group, child: Text(group));
+                }).toList(),
+                onChanged: (value) {
+                  setDialogState(() {
+                    selectedGroup = value;
+                  });
+                },
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Annuler'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    if (selectedGroup != null) {
+                      setState(() {
+                        _selectedGroups.add(selectedGroup!);
+                      });
+                      Navigator.pop(context);
+                    }
+                  },
+                  child: const Text('Ajouter'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
 
   Future<void> _selectItinerary() async {
     try {
@@ -559,53 +978,131 @@ class _TournamentFormState extends State<TournamentForm> {
   }
 
   Future<void> _saveTournament() async {
-    if (_nameController.text.isEmpty ||
-        _selectedGroups.isEmpty ||
-        _selectedChildren.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Veuillez remplir tous les champs obligatoires.')),
-      );
-      return;
+
+      _updateSelectedChildrenList();
+
+ // ✅ Validation complète
+  if (_nameController.text.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Veuillez saisir le nom du tournoi')),
+    );
+    return;
+  }
+  
+  if (_dateController.text.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Veuillez sélectionner une date')),
+    );
+    return;
+  }
+  
+  if (_locationType == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Veuillez sélectionner un type de lieu')),
+    );
+    return;
+  }
+  
+  if (_selectedGroups.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Veuillez sélectionner au moins un groupe')),
+    );
+    return;}
+
+ if (_selectedChildren.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Aucun joueur n\'est sélectionné')),
+    );
+    return;
+  }
+
+   // Vérifications supplémentaires pour un lieu extérieur
+    if (_locationType == 'Extérieur') {
+      if (_addressController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Veuillez saisir l\'adresse du lieu')));
+        return;
+      }
     }
 
-    final tournamentData = {
-      'name': _nameController.text.trim(),
-      'description': _descriptionController.text.trim(),
-      'locationType': _locationType,
-      'address': _addressController.text.trim(),
-      'itinerary': _itineraryController.text.trim(),
-      'fee': _isFree ? 'Gratuit' : _feeController.text.trim(),
-      'tenue': _tenueController.text.trim(),
-      'documents': _documentsController.text.trim(),
-      'dates':
-          _dateController.text.split(',').map((date) => date.trim()).toList(),
-      'selectedGroups': _selectedGroups,
-      'selectedChildren': _selectedChildren,
-      'coaches': _selectedCoaches,
-      'transportMode': _transportMode,
-    };
-
-    try {
-      if (widget.tournament == null) {
-        await _firestore.collection('tournaments').add(tournamentData);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Tournoi enregistré avec succès!')),
-        );
-      } else {
-        await _firestore
-            .collection('tournaments')
-            .doc(widget.tournament!.id)
-            .update(tournamentData);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Tournoi mis à jour avec succès!')),
-        );
-      }
-      Navigator.pop(context);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur lors de l\'enregistrement: $e')),
-      );
+   // ✅ Vérifier si des joueurs sont sélectionnés pour au moins un groupe
+  bool hasAnyPlayers = false;
+  for (var group in _selectedGroups) {
+    if (_selectedPlayersByGroup.containsKey(group) && 
+        _selectedPlayersByGroup[group]!.isNotEmpty) {
+      hasAnyPlayers = true;
+      break;
     }
   }
+
+    if (!hasAnyPlayers) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Veuillez sélectionner des joueurs pour au moins un groupe')),
+    );
+    return;
+  }
+
+  // Vérification des coachs surchargés si une date et des coachs sont sélectionnés
+  if (_selectedCoaches.isNotEmpty && _dateController.text.isNotEmpty) {
+    DateTime selectedDate = DateFormat('dd/MM/yyyy').parse(_dateController.text);
+    bool canProceed = await _coachService.validateCoachSelection(
+      _selectedCoaches, 
+      selectedDate,
+      context
+    );
+
+    if (!canProceed) {
+      return; // L'utilisateur a annulé ou attend sa confirmation
+    }
+  }
+
+    // ✅ Récupérer les tenues depuis les contrôleurs
+  for (var group in _selectedGroups) {
+    if (_uniformControllers.containsKey(group)) {
+      _selectedGroupsWithUniforms[group] = _uniformControllers[group]!.text;
+    }
+  }
+
+    
+
+  final tournamentData = {
+    'name': _nameController.text.trim(),
+    'description': _descriptionController.text.trim(),
+    'locationType': _locationType,
+    'address': _addressController.text.trim(),
+    'itinerary': _itineraryController.text.trim(),
+    'fee': _isFree ? 'Gratuit' : _feeController.text.trim(),
+    'documents': _documentsController.text.trim(),
+    'dates': _dateController.text.split(',').map((date) => date.trim()).toList(),
+    'selectedGroups': _selectedGroups,
+    'coaches': _selectedCoaches,
+    'transportMode': _transportMode,
+    'playersByGroup': _selectedPlayersByGroup, // ✅ Ajouter les joueurs par groupe
+    'uniforms': _selectedGroupsWithUniforms, // ✅ Ajouter les uniformes
+
+  };
+
+  // Le reste du code d'enregistrement reste inchangé
+  try {
+    if (widget.tournament == null) {
+      await _firestore.collection('tournaments').add(tournamentData);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tournoi enregistré avec succès!')),
+      );
+    } else {
+      await _firestore
+          .collection('tournaments')
+          .doc(widget.tournament!.id)
+          .update(tournamentData);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tournoi mis à jour avec succès!')),
+      );
+    }
+    Navigator.pop(context);
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Erreur lors de l\'enregistrement: $e')),
+    );
+  }
+}
 }
